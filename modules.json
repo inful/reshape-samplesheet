@@ -1,0 +1,32 @@
+{
+  "name": "reshape-samplesheet",
+  "homePage": "https://github.com/inful/reshape-samplesheet",
+  "repos": {
+    "nf-core": {
+      "git_url": "https://github.com/inful/reshape-samplesheet.git",
+      "modules": {
+        "nf-core": {
+          "samplesheet_validate": {
+            "branch": "main",
+            "git_sha": "521a6cdd34d3f059ce02ea7ddbe4cab16b16d491",
+            "installed_by": ["subworkflows"]
+          },
+          "samplesheet_reshape": {
+            "branch": "main",
+            "git_sha": "521a6cdd34d3f059ce02ea7ddbe4cab16b16d491",
+            "installed_by": ["subworkflows"]
+          }
+        }
+      },
+      "subworkflows": {
+        "nf-core": {
+          "reshape_samplesheet": {
+            "branch": "main",
+            "git_sha": "521a6cdd34d3f059ce02ea7ddbe4cab16b16d491",
+            "installed_by": ["subworkflows"]
+          }
+        }
+      }
+    }
+  }
+}
