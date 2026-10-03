@@ -1,0 +1,166 @@
+// nf-test for RESHAPE_SAMPLESHEET sub-workflow.
+//
+// Generated from the nf-core sub-workflow test template. Run with:
+//
+//     nf-core subworkflows test reshape_samplesheet
+//     nf-test test subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test
+//
+// The test fixtures (illumina_bcl2fastq.csv + the corresponding fastqs)
+// live at the project root under tests/data/ and tests/fastqs/ — they're
+// the same fixtures that the bespoke Groovy test suite used before the
+// nf-core restructure.
+
+nextflow_workflow {
+
+    name "Test Subworkflow RESHAPE_SAMPLESHEET"
+    script "../main.nf"
+    workflow "RESHAPE_SAMPLESHEET"
+
+    tag "subworkflows"
+    tag "subworkflows_nfcore"
+    tag "subworkflows/reshape_samplesheet"
+    tag "samplesheet_validate"
+    tag "samplesheet_reshape"
+
+
+    test("bcl2fastq - happy path - default opts") {
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv', checkIfExists: true)
+                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assertAll(
+                { assert snapshot(
+                    workflow.out.csv.collect { it.getName() },
+                    workflow.out.versions.collect { it.getName() }
+                ).match() }
+            )
+        }
+
+        cleanup {
+            // Drop the .nfcore_test_output scratch dir created by the test.
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
+
+
+    test("bcl2fastq - with strandedness column") {
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv', checkIfExists: true)
+                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[3] = [strandedness: 'reverse']
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assertAll(
+                { assert snapshot(
+                    workflow.out.csv.collect { it.getName() }
+                ).match() }
+            )
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
+
+
+    test("LRM - happy path - default opts") {
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm.csv', checkIfExists: true)
+                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assertAll(
+                { assert snapshot(
+                    workflow.out.csv.collect { it.getName() }
+                ).match() }
+            )
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
+
+
+    test("missing fastq match - should fail with IllegalArgumentException") {
+
+        when {
+            params { }
+            workflow {
+                """
+                // Samplesheet has an extra Sample_ID (sample_orphan) that has
+                // no matching fastqs. validate() throws → sub-workflow fails.
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm_with_orphan.csv', checkIfExists: true)
+                input[1] = file('\${projectDir}/../../../../tests/fastqs',                            checkIfExists: true)
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output',               checkIfExists: false)
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.failed
+            assert workflow.errorReport.contains("sample_orphan")
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
+
+
+    test("bcl2fastq - stub - happy path") {
+
+        options "-stub"
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv', checkIfExists: true)
+                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
+}

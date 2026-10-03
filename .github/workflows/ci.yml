@@ -1,12 +1,17 @@
 # GitHub Actions CI for reshape-samplesheet.
 #
-# Two jobs:
-#   1. lint  — verifies the manifest fields stay sensible (name, version,
-#              author, nextflowVersion, mainScript). Cheap, runs first.
-#   2. test  — runs the full unit suite (79 tests via groovy) AND the
-#              Nextflow smoke test on a matrix of Nextflow versions.
-#              Pin specific patch versions below to keep builds
-#              reproducible; bump periodically.
+# Three jobs:
+#   1. lint-manifest  — verifies the manifest fields stay sensible (name,
+#                       version, author, nextflowVersion, mainScript).
+#                       Cheap, runs first.
+#   2. lint-nf-core   — runs `nf-core subworkflows lint` to validate the
+#                       nf-core layout (meta.yml, ≥2 modules, tags,
+#                       versions channel, etc.).
+#   3. test           — runs `bin/test.sh --nf-test` (the nf-test suite
+#                       for the sub-workflow) AND `bin/test.sh --smoke`
+#                       (Nextflow end-to-end), on a matrix of Nextflow
+#                       versions. Pin specific patch versions below to
+#                       keep builds reproducible; bump periodically.
 #
 # To add a new Nextflow line (e.g. 27.x when ready), add another entry to
 # matrix.nextflow under the `test` job.
@@ -33,11 +38,11 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # lint: cheap manifest sanity checks. No Nextflow version pinned — always
-  # uses the latest stable for the lint job since we're just verifying
-  # `nextflow config` can parse our nextflow.config.
+  # lint-manifest: cheap manifest sanity checks. No Nextflow version pinned —
+  # always uses the latest stable for the lint job since we're just verifying
+  # the nextflow.config fields stay sane.
   # ---------------------------------------------------------------------------
-  lint:
+  lint-manifest:
     name: Lint manifest
     runs-on: ubuntu-latest
     steps:
@@ -85,7 +90,33 @@ jobs:
           echo "::endgroup::"
 
   # ---------------------------------------------------------------------------
-  # test: full unit suite + Nextflow smoke test, on a matrix of Nextflow
+  # lint-nf-core: validates the nf-core layout (meta.yml, ≥2 modules,
+  # test files, versions channel, schema compliance, etc.).
+  # ---------------------------------------------------------------------------
+  lint-nf-core:
+    name: Lint nf-core layout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install nf-core tools
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # nf-core (Python) for `nf-core subworkflows lint`
+          python -m pip install --upgrade nf-core
+
+      - name: Run nf-core subworkflows lint
+        run: nf-core subworkflows lint reshape_samplesheet --dir  --fail-on-warn
+
+  # ---------------------------------------------------------------------------
+  # test: nf-test suite + Nextflow smoke test, on a matrix of Nextflow
   # patch versions. fail-fast: false so a failure on one version still
   # surfaces the result on the others (useful when one line regresses).
   # ---------------------------------------------------------------------------
@@ -142,8 +173,8 @@ jobs:
           sudo mv nextflow /usr/local/bin/nextflow
           nextflow -version
 
-      - name: Run unit test suite (79 tests)
-        run: bin/test.sh --full
+      - name: Run nf-test suite (replaces the old bespoke Groovy tests)
+        run: bin/test.sh --nf-test
 
       - name: Run Nextflow smoke test
         run: bin/test.sh --smoke

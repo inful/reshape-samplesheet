@@ -1,0 +1,68 @@
+name: reshape_samplesheet
+description: |
+  Read an Illumina samplesheet (bcl2fastq or Local Run Manager format),
+  match Sample_IDs against fastq files in a directory, and emit a CSV
+  in the generic nf-core layout (sample,fastq_1,fastq_2[,strandedness]).
+
+  Multiple R1/R2 files per sample (e.g. across lanes) are joined into a
+  single comma-separated cell, per nf-core convention. Single-end samples
+  get an empty fastq_2 cell. Strict error contract: every malformed input
+  throws IllegalArgumentException with the file path and all detected
+  problems in one error message — no silent partial output.
+keywords:
+  - samplesheet
+  - illumina
+  - bcl2fastq
+  - local-run-manager
+  - nf-core
+  - reshape
+  - subworkflow
+components:
+  - samplesheet_validate
+  - samplesheet_reshape
+input:
+  - ch_samplesheet:
+      type: file
+      description: |
+        The Illumina samplesheet CSV (bcl2fastq or Local Run Manager format).
+        Structure: [ path(samplesheet.csv) ]
+      pattern: "*.csv"
+  - ch_fastq_dir:
+      type: directory
+      description: |
+        Directory containing the fastq(.gz) files. Filenames are matched
+        against the Sample_IDs in the samplesheet.
+        Structure: [ path(fastq_dir) ]
+  - ch_output_dir:
+      type: directory
+      description: |
+        Directory to write the reshaped CSV into. Created if it does not
+        already exist. The output filename is `<samplesheet_basename>.nfcore.csv`.
+        Structure: [ path(output_dir) ]
+  - ch_opts:
+      type: map
+      description: |
+        Options map. Recognised keys (all optional, all forward-compatible):
+        - recursive (Boolean, default false): walk fastq_dir recursively.
+        - strandedness (String, default null): when non-null, add a 4th column.
+        - pattern (String, default null): custom regex template for filename matching.
+        - validateStructure (Boolean, default false): run bcl2fastq structural checks.
+output:
+  - csv:
+      type: file
+      description: |
+        The reshaped CSV in nf-core layout. One row per Sample_ID,
+        columns: sample,fastq_1,fastq_2[,strandedness]. Multiple lanes
+        are comma-joined into a single cell.
+        Structure: [ path(*.nfcore.csv) ]
+      pattern: "*.nfcore.csv"
+  - versions:
+      type: file
+      description: |
+        File containing tool versions from both modules.
+        Structure: [ path(versions.yml) ]
+      pattern: "versions.yml"
+authors:
+  - "@inful"
+maintainers:
+  - "@inful"

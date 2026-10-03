@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Restructured to the nf-core publish layout.** The sub-workflow moved
+  from `subworkflows/local/reshape_samplesheet.nf` to
+  `subworkflows/nf-core/reshape_samplesheet/main.nf` (the layout
+  `nf-core subworkflows install` consumes). Two thin module wrappers
+  in `modules/nf-core/{samplesheet_validate,samplesheet_reshape}/`
+  satisfy nf-core's `≥2 modules` rule and call into the same `lib/`
+  Groovy implementation as before. `meta.yml` for the sub-workflow
+  and both modules documents inputs, channel structures, authors,
+  maintainers, and the `versions` channel emit.
+- **Test runner switched from bespoke Groovy to nf-test.** The 79-test
+  Groovy suite is retired; the new nf-test suite in
+  `subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test` covers
+  the happy path, the `strandedness` opt, the LRM format, an
+  intentional failure (orphan sample), and the required stub test.
+  Snapshot files live next to the test file. `bin/test.sh` now runs
+  `nf-test` instead of Groovy.
+- **`bin/test.sh` modes renamed.** `--full` is gone (replaced by
+  `--nf-test`); `--smoke` unchanged; the default now prefers nf-test
+  and falls back to smoke if nf-test isn't installed.
+- **`main.nf` updated** to include the sub-workflow from its new
+  `subworkflows/nf-core/reshape_samplesheet/main.nf` path.
+
+### Added
+- New CI job **`lint-nf-core`** in `.github/workflows/ci.yml` that
+  runs `nf-core subworkflows lint reshape_samplesheet` on every push
+  and PR, catching structural regressions before they hit review.
+- New CI matrix step runs the **nf-test** suite (`bin/test.sh
+  --nf-test`) on Nextflow 25.10.4 and 26.04.4.
+- New test fixture **`tests/data/illumina_lrm_with_orphan.csv`** —
+  a Local Run Manager samplesheet with an extra `sample_orphan` row
+  that has no matching fastqs, used by the "missing fastq match"
+  nf-test case.
+
+### Removed
+- **`subworkflows/local/reshape_samplesheet.nf`** — replaced by
+  `subworkflows/nf-core/reshape_samplesheet/main.nf`.
+- **`tests/test_*.groovy`** (parser, reshaper, validator, options,
+  matching) plus `tests/test_runner.groovy` — retired with the
+  bespoke Groovy suite. Behaviour coverage is now via nf-test's
+  snapshot pattern; behavioural edge cases are documented in the
+  README's "What the bespoke Groovy suite (pre-nf-core) covered"
+  section.
+
 ## [0.1.0] - 2026-10-03
 
 ### Added

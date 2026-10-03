@@ -8,7 +8,7 @@ nextflow.enable.dsl=2
 // (sample, fastq_1, fastq_2) so it can be fed into an nf-core module.
 //
 
-include { RESHAPE_SAMPLESHEET } from './subworkflows/local/reshape_samplesheet.nf'
+include { RESHAPE_SAMPLESHEET } from './subworkflows/nf-core/reshape_samplesheet/main.nf'
 
 // Helper: require a non-empty param or fail with a clear error. Defined
 // at script scope (not inside the workflow body) so it works around

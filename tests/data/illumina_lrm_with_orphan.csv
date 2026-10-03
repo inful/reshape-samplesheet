@@ -1,0 +1,6 @@
+Sample_ID,Sample_Name,Sample_Plate,Sample_Well,Sample_Project,Description,index,index2,SampleType
+sample_A,sample_A,,,,,ATCGACGT,GCTAGCTA,DNA
+sample_B,sample_B,,,,,GGCTAACC,TGACCGAA,DNA
+sample_C,sample_C,,,,,AACCGGTT,CCAACCGG,DNA
+sample_D,sample_D,,,,,TTACCGAA,AATTCCGG,DNA
+sample_orphan,sample_orphan,,,,,AAAAAAAA,TTTTTTTT,DNA

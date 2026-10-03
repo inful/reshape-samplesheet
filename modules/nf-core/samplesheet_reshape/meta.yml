@@ -1,0 +1,60 @@
+name: samplesheet_reshape
+description: |
+  Reshape an Illumina samplesheet (bcl2fastq or Local Run Manager format)
+  into the generic nf-core samplesheet layout
+  (sample,fastq_1,fastq_2[,strandedness]). The Sample_IDs in the input
+  are matched against fastq files in a directory and the matching files
+  are joined (multi-lane aggregation) into a single cell per sample.
+
+  Thin wrapper around SamplesheetReshape.writeReshaped() from the
+  parent pipeline's lib/ directory. See the reshape-samplesheet
+  sub-workflow for the high-level use case.
+keywords:
+  - samplesheet
+  - illumina
+  - bcl2fastq
+  - reshape
+  - nf-core
+input:
+  - samplesheet:
+      type: file
+      description: The Illumina samplesheet CSV (bcl2fastq or LRM format).
+      pattern: "*.csv"
+  - fastq_dir:
+      type: directory
+      description: |
+        Directory containing fastq(.gz) files produced by bcl2fastq (or
+        any tool using the {SampleID}_S{N}_L00{Lane}_R{1,2}_001.fastq.gz
+        naming convention).
+  - output_dir:
+      type: directory
+      description: |
+        Directory to write the reshaped CSV into. Created if it doesn't
+        already exist. The CSV filename is `<samplesheet_basename>.nfcore.csv`.
+  - opts:
+      type: map
+      description: |
+        Options map. Recognised keys (all optional, all forward-compatible):
+        - recursive (Boolean): walk fastq_dir recursively.
+        - strandedness (String): when non-null, add a 4th column with this value.
+        - pattern (String): custom regex template for filename matching.
+        - validateStructure (Boolean): also run bcl2fastq structural checks.
+output:
+  - csv:
+      type: file
+      description: |
+        The reshaped CSV in nf-core layout. One row per Sample_ID,
+        columns: sample,fastq_1,fastq_2[,strandedness]. Multiple
+        lanes are comma-joined into one cell.
+        Structure: [ path(*.nfcore.csv) ]
+      pattern: "*.nfcore.csv"
+  - versions:
+      type: file
+      description: |
+        File containing tool versions.
+        Structure: [ path(versions.yml) ]
+      pattern: "versions.yml"
+authors:
+  - "@inful"
+maintainers:
+  - "@inful"

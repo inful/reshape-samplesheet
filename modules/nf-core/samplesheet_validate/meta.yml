@@ -1,0 +1,50 @@
+name: samplesheet_validate
+description: |
+  Pre-flight validation of an Illumina samplesheet (bcl2fastq or Local
+  Run Manager format) against a directory of fastq files. Runs every
+  check that reshape would perform, but discards the output. Throws
+  IllegalArgumentException with the complete list of problems if any
+  input is malformed, so callers can fail fast before any compute is
+  submitted.
+
+  Thin wrapper around SamplesheetReshape.validate() from the parent
+  pipeline's lib/ directory. See the reshape-samplesheet sub-workflow
+  for the high-level use case.
+keywords:
+  - samplesheet
+  - illumina
+  - bcl2fastq
+  - validation
+  - pre-flight
+input:
+  - samplesheet:
+      type: file
+      description: The Illumina samplesheet CSV (bcl2fastq or LRM format).
+      pattern: "*.csv"
+  - fastq_dir:
+      type: directory
+      description: |
+        Directory containing fastq(.gz) files produced by bcl2fastq (or
+        any tool using the {SampleID}_S{N}_L00{Lane}_R{1,2}_001.fastq.gz
+        naming convention).
+  - opts:
+      type: map
+      description: |
+        Options map. Recognised keys (all optional, all forward-compatible):
+        - recursive (Boolean): walk fastq_dir recursively to find fastqs in subdirectories.
+        - strandedness (String): when non-null, validate that the value is a sane strandedness label.
+        - pattern (String): custom regex template for matching fastq filenames to Sample_IDs.
+        - validateStructure (Boolean): also run bcl2fastq structural checks
+          (unique Sample_IDs, I7/I5 index format, I7+I5 length consistency,
+          I7+I5 uniqueness).
+output:
+  - versions:
+      type: file
+      description: |
+        File containing tool versions.
+        Structure: [ path(versions.yml) ]
+      pattern: "versions.yml"
+authors:
+  - "@inful"
+maintainers:
+  - "@inful"
