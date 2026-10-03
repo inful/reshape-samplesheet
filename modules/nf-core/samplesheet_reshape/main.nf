@@ -29,16 +29,18 @@ process SAMPLESHEET_RESHAPE {
     # Bring SamplesheetReshape + helpers into the task workdir.
     mkdir -p lib
     find ${projectDir}/lib -maxdepth 1 -name '*.groovy' -exec cp -t lib {} +
-    # Use the staged paths directly. writeReshaped() is happy to take
-    # either a relative or absolute path.
-    groovy -cp lib -e '''
-        SamplesheetReshape.writeReshaped(
-            new File('${output_dir}'),
-            new File('${samplesheet}'),
-            new File('${fastq_dir}'),
-            new groovy.json.JsonSlurper().parseText('${opts_json}')
-        )
-    '''
+
+    # Write the Groovy entry point to a file (groovy -e with multi-line
+    # scripts parses indentation awkwardly). Then run it.
+    cat > reshape.groovy << 'GROOVY'
+    SamplesheetReshape.writeReshaped(
+        new File('${output_dir}'),
+        new File('${samplesheet}'),
+        new File('${fastq_dir}'),
+        new groovy.json.JsonSlurper().parseText('${opts_json}')
+    )
+    GROOVY
+    groovy -cp lib reshape.groovy
 
     cat << END_VERSIONS > versions.yml
     "${task.process}":

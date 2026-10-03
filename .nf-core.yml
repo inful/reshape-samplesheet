@@ -1,0 +1,26 @@
+# nf-core/tools configuration for reshape-samplesheet.
+#
+# Tells `nf-core subworkflows lint` and friends that this repo is a
+# pipeline-style project (has both main.nf and an nf-core sub-workflow
+# tree). Without it, nf-core tools 4.x's heuristic detection sees both
+# the pipeline entry point AND the modules/nf-core/ subtree and fails
+# with "Repository type could not be established".
+#
+# Schema: https://nf-co.re/docs/nf-core-tools/api_reference
+nf_core_version: "4.1.0"
+
+repository_type: pipeline
+
+# Lint settings: don't require pipeline-level schema / parameters since
+# this is a single-sub-workflow project that gets included into other
+# pipelines via `nf-core subworkflows install`.
+lint:
+  # Lint everything by default; the modules + sub-workflow each get
+  # their own checks.
+  modules: true
+  subworkflows: true
+  pipeline: false      # skip pipeline-level checks (no params.schema.json)
+  schema_params: false # same — we're a sub-workflow, not a standalone pipeline
+  config: false        # we don't have a nextflow_schema.json yet
+  files: false            # keep file conventions loose (no nf-core.yml at root, no assets/)
+  readme: false         # the project has a thorough README, but nf-core's readme lint expects the nf-core template
