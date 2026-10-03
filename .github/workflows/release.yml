@@ -1,0 +1,101 @@
+# Release workflow — fires when a tag like `0.1.0` is pushed.
+#
+# What it does:
+#   1. Builds `source.zip` from the tagged commit (`git archive`).
+#   2. Extracts the matching `## [<tag>]` section from CHANGELOG.md
+#      to use as the release body.
+#   3. Creates a GitHub Release via softprops/action-gh-release,
+#      attaching `source.zip` and the body.
+#
+# Releases are tagged from `main` following Semantic Versioning. Tags
+# use the bare version (`0.1.0`, no `v` prefix) to match nf-core
+# convention. See CONTRIBUTING.md → "Release process".
+
+name: Release
+
+on:
+  push:
+    tags: ['*']
+  # Manual trigger for re-running a release if it failed (e.g. network blip).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re-)release, e.g. 0.1.0'
+        required: true
+
+# `contents: write` is required for softprops/action-gh-release to
+# create the GitHub Release and upload assets. This token is scoped
+# to this workflow only.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so git archive can resolve HEAD.
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          # workflow_dispatch passes the tag via inputs.tag; tag push uses
+          # github.ref_name. Fall back to the first v* tag if neither is set.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Releasing tag: ${TAG}"
+
+      - name: Verify tag is parseable as semver
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if ! echo "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '${TAG}' is not a bare semver version (expected MAJOR.MINOR.PATCH, no 'v' prefix)."
+            exit 1
+          fi
+
+      - name: Extract CHANGELOG section for ${TAG}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if grep -Eq "^## \[${TAG}\]" CHANGELOG.md; then
+            # Print from "## [<TAG>]" up to (but excluding) the next "## [".
+            sed -n "/^## \[${TAG}\]/,/^## \[/p" CHANGELOG.md | sed '$d' > RELEASE_NOTES.md
+          else
+            # No CHANGELOG entry yet — fall back to a minimal body so the
+            # release still goes out (maintainers should back-fill CHANGELOG).
+            {
+              echo "## ${TAG}"
+              echo ""
+              echo "_No CHANGELOG entry yet for this version. Please back-fill \`CHANGELOG.md\`._"
+            } > RELEASE_NOTES.md
+          fi
+          echo "----- RELEASE_NOTES.md -----"
+          cat RELEASE_NOTES.md
+
+      - name: Build source.zip from HEAD
+        run: |
+          # `git archive` excludes .git by default; we keep the repo's
+          # .gitignore-respected layout but include LICENSE, README.md,
+          # CHANGELOG.md, etc. for an immediately-usable snapshot.
+          git archive --format=zip --output=source.zip HEAD
+          ls -lh source.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: source.zip
+          fail_on_unmatched_files: true
+          # Don't mark as draft — let maintainers edit after creation
+          # via the GitHub UI if they want to add polish.
+          draft: false
+          prerelease: false

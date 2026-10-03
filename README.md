@@ -1,5 +1,7 @@
 # reshape-samplesheet
 
+[![CI](https://github.com/inful/reshape-samplesheet/actions/workflows/ci.yml/badge.svg)](https://github.com/inful/reshape-samplesheet/actions/workflows/ci.yml)
+
 A small Nextflow component that reads an Illumina samplesheet (bcl2fastq or
 Local Run Manager format) and emits a generic nf-core samplesheet
 (`sample,fastq_1,fastq_2`) that can be fed straight into an nf-core module.

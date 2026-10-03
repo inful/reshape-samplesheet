@@ -1,0 +1,12 @@
+# Issue chooser config for reshape-samplesheet.
+# Renders the bug/feature chooser when a user clicks "New issue".
+# Security issues should NOT be filed as public issues — see SECURITY.md.
+
+blank_issues_enabled: true
+contact_links:
+  - name: Security disclosures
+    url: https://github.com/inful/reshape-samplesheet/security/advisories/new
+    about: |
+      Please report security vulnerabilities privately via GitHub
+      Security Advisories rather than as public issues. See
+      SECURITY.md for the full disclosure policy.

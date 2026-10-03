@@ -1,0 +1,27 @@
+# Dependabot configuration for reshape-samplesheet.
+#
+# Auto-PRs for GitHub Actions version bumps. We only watch the GitHub
+# Actions ecosystem here — there are no other managed dependencies
+# (the lib is pure Groovy, no Maven/Gradle/npm/pip).
+
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      # Weekly Monday check — Dependabot groups and rate-limits itself,
+      # so this won't produce noisy PR spam.
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+    # Keep the workflow file as the only review surface for these PRs.
+    # Run the CI workflow on the PR to make sure the bump doesn't break
+    # anything before it lands.
+    reviewers:
+        - "inful"
+    open-pull-requests-limit: 5
