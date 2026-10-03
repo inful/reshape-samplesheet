@@ -36,9 +36,11 @@ process SAMPLESHEET_RESHAPE {
     mkdir -p lib
     find ${projectDir}/lib -maxdepth 1 -name '*.groovy' -exec cp -t lib {} +
 
-    # Make sure the output directory exists. Stage modes can vary
-    # (copy vs symlink) and Nextflow's mkdirs() inside the lib isn't
-    # always reliable on a freshly-created (empty) staged path.
+    # Make sure the output directory exists. When output_dir is
+`checkIfExists: false` in the nf-test, Nextflow creates it as an
+    # EMPTY FILE placeholder (not a directory). Force-create a real
+    # directory here so the Groovy file write below can succeed.
+    rm -rf '${output_dir_str}'
     mkdir -p '${output_dir_str}'
 
     # Write the Groovy entry point to a file and run it.
