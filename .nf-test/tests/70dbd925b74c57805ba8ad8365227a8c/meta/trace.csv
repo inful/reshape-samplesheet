@@ -1,3 +1,0 @@
-task_id	hash	native_id	name	status	exit	submit	duration	realtime	%cpu	peak_rss	peak_vmem	rchar	wchar
-1	a6/6509ea	31145	RESHAPE_SAMPLESHEET:SAMPLESHEET_RESHAPE (illumina_bcl2fastq.csv)	COMPLETED	0	2026-10-03 19:56:22.467	1.9s	1.8s	-	-	-	-	-
-2	17/1e7d11	31140	RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_bcl2fastq.csv)	COMPLETED	0	2026-10-03 19:56:22.453	2s	1.9s	-	-	-	-	-

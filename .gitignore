@@ -11,3 +11,8 @@ test_output/
 nextflow
 nextflow-*
 *.log
+# nf-test scratch dir + the local nf-test binary + nextflow binary
+# installed by get.nextflow.io (all created when developing locally)
+.nf-test/
+.nf-test.log
+nf-test
