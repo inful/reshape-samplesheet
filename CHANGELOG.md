@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-03
+
+### Added
+- **Restored the 79-test bespoke Groovy unit suite** (`tests/test_*.groovy`)
+  as a fast, in-process CI layer. Runs in ~10 seconds, no Nextflow or
+  nf-test required. Covers every parser / validate / reshape /
+  matching / opts-coercion edge case at the lib level — the cases
+  that nf-test (which only checks the sub-workflow emit path) can't
+  reach. Restored because the nf-test suite alone is shallow: only
+  workflow.success + a few CSV header checks, not semantic coverage.
+- New CI job `unit` in `.github/workflows/ci.yml` that runs the unit
+  suite independently of the Nextflow matrix, so it catches lib
+  regressions in seconds without installing Nextflow.
+- New `bin/test.sh --unit` mode. Default mode (`auto`) now runs
+  `unit + nf-test` if nf-test is on PATH, `unit + smoke` if only
+  Nextflow is on PATH, or `unit` alone otherwise.
+
+### Changed
+- `bin/test.sh` rewritten with four explicit modes (`--unit`,
+  `--nf-test`, `--smoke`, default `auto`) and a tally of total
+  pass/fail across all unit-test files.
+
 ## [0.2.0] - 2026-10-03
 
 ### Changed

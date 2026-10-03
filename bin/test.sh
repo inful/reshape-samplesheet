@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
 # Runs the reshape-samplesheet tests.
 #
-# Three modes:
-#   1. nf-test (the nf-core standard) — needs `nf-test` on PATH.
-#      Runs the nf-test suite in
-#      subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test
-#      against the bundled fixtures in tests/data and tests/fastqs.
-#      Run with `--nf-test`.
-#   2. Smoke test                       — needs `nextflow` on PATH.
-#      Runs main.nf end-to-end and verifies the reshaped CSV is written
-#      into a throwaway .test_output/ directory. Exercises the same
-#      code path the production sub-workflow uses, so confirms
-#      Nextflow wires up lib/ correctly. Run with `--smoke`.
-#   3. Auto (the default with no flag) — runs the nf-test suite if
-#      `nf-test` is on PATH, otherwise falls back to the smoke test.
-#      This is what `bin/test.sh` with no arguments does.
+# Four modes:
+#   1. unit      — bespoke Groovy unit tests of every parser/reshape/
+#                  validate/opts-coercion/matching edge case. Tests
+#                  the lib directly (no Nextflow required). Fast:
+#                  finishes in ~10s. Needs `groovy` on PATH.
+#   2. nf-test   — nf-core nf-test suite that exercises the full
+#                  sub-workflow emit path. Needs `nf-test` + `nextflow`.
+#                  Finish in ~30s.
+#   3. smoke     — Nextflow end-to-end via main.nf. Needs `nextflow`.
+#   4. auto      — runs unit + nf-test if nf-test is on PATH, else
+#                  unit + smoke. Default when called with no flags.
 #
-#   bin/test.sh                # auto: nf-test if available, else smoke
-#   bin/test.sh --nf-test      # force the nf-test suite (error if nf-test missing)
-#   bin/test.sh --smoke        # force the smoke test
+#   bin/test.sh                # auto
+#   bin/test.sh --unit         # just the 79 lib unit tests
+#   bin/test.sh --nf-test      # just nf-test
+#   bin/test.sh --smoke        # just the Nextflow smoke test
 #
-# Note: the previous `bin/test.sh --full` mode (79 bespoke Groovy
-# unit tests) was retired when the project restructured to the
-# nf-core layout. The nf-test suite replaces it with the nf-core-
-# standard assertions and snapshot files.
+# Why both unit AND nf-test?
+#   unit      = fast, cheap, in-process — catches every parser /
+#               validate / matching / coercion edge case at the lib
+#               level. Doesn't exercise the Nextflow wire.
+#   nf-test   = slow, full integration — catches module-wrapping,
+#               bash/Groovy subprocess, Nextflow path staging, and
+#               emit-channel regressions. Doesn't check every semantic
+#               case.
+# Both are needed; together they give complete coverage.
 #
 # Install nf-test via:
-#   pipx install nf-test
-#   # or: pip install nf-test
-#
+#   curl -fsSL https://get.nf-test.com | bash
+#   # or: pipx install nf-test
 
 set -euo pipefail
 
@@ -37,10 +39,11 @@ cd "$(dirname "$0")/.."
 mode="auto"
 for arg in "$@"; do
     case "$arg" in
+        --unit)    mode="unit"    ;;
         --nf-test) mode="nf-test" ;;
         --smoke)   mode="smoke"   ;;
         -h|--help)
-            sed -n '2,32p' "$0"
+            sed -n '2,40p' "$0"
             exit 0
             ;;
         *)
@@ -49,6 +52,50 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+run_unit() {
+    if ! command -v groovy >/dev/null 2>&1; then
+        cat >&2 <<EOF
+error: 'groovy' not found on PATH.
+
+The unit-test suite needs a standalone Groovy install (separate
+from the Groovy that ships inside Nextflow's fat JAR).
+Install with one of:
+  - SDKMAN:  sdk install groovy
+  - Homebrew: brew install groovy
+  - mise:    mise use --yes groovy@latest
+EOF
+        exit 127
+    fi
+    local total_exit=0
+    local total_pass=0
+    local total_fail=0
+    # test_runner.groovy is the harness loaded via `evaluate` by the
+    # other tests — skip it as a standalone test.
+    for test_file in tests/test_*.groovy; do
+        [[ "$(basename "$test_file")" == "test_runner.groovy" ]] && continue
+        echo "--- $test_file"
+        # Capture output so we can tally pass/fail totals across files.
+        local out
+        if out=$(groovy -cp lib "$test_file" 2>&1); then
+            local last
+            last=$(echo "$out" | grep "^Results:" | tail -1)
+            echo "$last"
+            local passed failed
+            passed=$(echo "$last" | sed -E 's/.* ([0-9]+) passed.*/\1/')
+            failed=$(echo "$last" | sed -E 's/.* ([0-9]+) failed.*/\1/')
+            total_pass=$((total_pass + passed))
+            total_fail=$((total_fail + failed))
+        else
+            echo "$out" | tail -5
+            total_fail=$((total_fail + 1))
+            total_exit=1
+        fi
+    done
+    echo ""
+    echo "Unit tests total: ${total_pass} passed, ${total_fail} failed"
+    return $total_exit
+}
 
 run_nf_test() {
     if ! command -v nf-test >/dev/null 2>&1; then
@@ -84,11 +131,6 @@ EOF
     rm -rf "$outdir"
     mkdir -p "$outdir"
     echo "==> Running smoke test (nextflow run main.nf → workDir)"
-    # The nf-core module emits the CSV via Nextflow's work-dir staging
-    # (publishDir is set by the calling pipeline, not by the module —
-    # that's the nf-core convention). The smoke test just verifies
-    # the workflow completes and prints the CSV path the sub-workflow
-    # emitted.
     local csv_path
     csv_path=$(nextflow -q run main.nf \
         --samplesheet tests/data/illumina_bcl2fastq.csv \
@@ -116,14 +158,28 @@ EOF
 }
 
 case "$mode" in
-    nf-test) run_nf_test ;;
-    smoke)   run_smoke   ;;
+    unit)
+        run_unit
+        ;;
+    nf-test)
+        run_unit
+        run_nf_test
+        ;;
+    smoke)
+        run_unit
+        run_smoke
+        ;;
     auto)
+        # Always run the cheap unit tests first; they don't need
+        # Nextflow or nf-test, so they catch most regressions in seconds.
+        run_unit
         if command -v nf-test >/dev/null 2>&1; then
             run_nf_test
-        else
+        elif command -v nextflow >/dev/null 2>&1; then
             echo "(nf-test not found — falling back to Nextflow smoke test)"
             run_smoke
+        else
+            echo "(nf-test and nextflow both missing — skipping integration tests)"
         fi
         ;;
 esac

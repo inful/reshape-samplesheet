@@ -344,16 +344,26 @@ bin/test.sh --nf-test      # nf-test suite only (error if nf-test missing)
 bin/test.sh --smoke        # Nextflow-based smoke test only
 ```
 
-### Three test modes
+### Four test modes
 
 | mode          | what it does                                                  | needs on PATH |
 | ------------- | ------------------------------------------------------------- | ------------- |
-| _(default)_   | runs `nf-test` if it's on PATH, otherwise falls back to the smoke test | `nf-test` *or* `nextflow` |
-| `--nf-test`   | runs the nf-test suite against `subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test` (5 nf-test cases; snapshot file is generated on first run) | `nf-test` + `nextflow` |
-| `--smoke`     | runs `nextflow run main.nf` end-to-end and asserts the output CSV exists with the right header | `nextflow`    |
+| _(default)_   | runs unit + nf-test (or unit + smoke if nf-test is missing)    | `groovy` *and* (`nf-test` *or* `nextflow`) |
+| `--unit`      | runs the 79-test bespoke Groovy unit suite (`tests/test_*.groovy`) — fast, in-process, no Nextflow | `groovy` |
+| `--nf-test`   | runs unit + nf-test against `subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test` (5 nf-test cases) | `groovy` + `nf-test` + `nextflow` |
+| `--smoke`     | runs unit + `nextflow run main.nf` end-to-end (asserts the emitted CSV exists with the right header) | `groovy` + `nextflow` |
 
-The nf-test suite needs **`nf-test` on `PATH`** in addition to Nextflow
-itself. Install nf-test with one of:
+The **unit suite** is pure Groovy and runs in ~10 seconds without
+installing anything heavy. Install standalone Groovy with one of:
+
+```bash
+sdk install groovy             # SDKMAN
+brew install groovy            # Homebrew
+mise use --yes groovy@latest   # mise (also pins java 21)
+```
+
+The **nf-test suite** needs **`nf-test` on `PATH`** in addition to
+Nextflow itself. Install with:
 
 ```bash
 curl -fsSL https://get.nf-test.com | bash         # current stable
@@ -363,11 +373,18 @@ pipx install nf-test                              # via pipx
 `bin/test.sh` will tell you which install you need if anything is
 missing.
 
-The smoke test is the **fallback for users with only Nextflow
-installed**. It exercises the same code path the production sub-workflow
-uses (Nextflow script context → `lib/` auto-load → module processes),
-so it's a real end-to-end check that the lib resolves in Nextflow even
-without nf-test.
+### Why both unit and nf-test?
+
+- **unit** = fast, cheap, in-process. Catches every parser /
+  validate / matching / coercion edge case at the lib level. Doesn't
+  exercise the Nextflow wire (no module wrapping, no path staging,
+  no emit channel).
+- **nf-test** = slow, full integration. Catches module-wrapping
+  regressions, the bash/Groovy subprocess invocation, Nextflow's
+  path staging, and the emit-channel shape.
+
+They're not redundant — each layer catches a different class of bug.
+Together they give complete coverage.
 
 ### Installing the dev toolchain
 
@@ -386,57 +403,79 @@ mise use --yes java@21 groovy@latest
 
 The `mise.toml` in this repo does the last option automatically.
 
-### What the nf-test suite covers
+### What the unit suite covers (79 tests in `tests/test_*.groovy`)
+
+Restored alongside nf-test in v0.2.1 — they cover complementary
+concerns. Five files, 79 cases total, run via `bin/test.sh --unit`:
+
+- **`test_parser.groovy` — 22 cases.** Samplesheet parsing edge cases
+  across both formats: missing file, empty file, whitespace-only,
+  bcl2fastq without `[Data]`, duplicate header columns, missing
+  `Sample_ID` column, empty header cell, CRLF line endings, UTF-8
+  BOM, non-ASCII characters, multi-line quoted fields, lowercase
+  column names. Plus row-level errors (wrong cell count, empty
+  `Sample_ID`) and the "all malformed rows collected into one
+  exception" contract.
+
+- **`test_reshaper.groovy` — 15 cases.** Reshape and `writeReshaped`
+  behaviour: paired-end, multi-lane aggregation into a comma-joined
+  cell, single-end emits empty `fastq_2`, unrelated files ignored,
+  LRM and bcl2fastq produce the same rows for the same fastq_dir,
+  strict failure modes (lists ALL missing samples; non-existent and
+  empty fastq_dir; trailing newline; opts=null is the default).
+
+- **`test_validator.groovy` — 20 cases.** Every `validateBcl2fastq`
+  check: duplicate `Sample_ID`s, invalid I7/I5 characters, mixed-case
+  normalisation, duplicate I7+I5, empty I7/I5 values, inconsistent
+  I7/I5 lengths across samples, dual-indexed distinguishability,
+  `opts.validateStructure: true` integration through reshape.
+
+- **`test_options.groovy` — 14 cases.** Every `opts` footgun: the four
+  `--strandedness ''` coercions (`Boolean true`, empty string, String
+  `"true"`, String `"false"`), `recursive=true/false`, opts=null == empty,
+  named-arg sugar equivalence.
+
+- **`test_matching.groovy` — 8 cases.** The fastq-filename matching
+  algorithm: strict default matching (catches the substring trap),
+  separator handling, `opts.pattern` regex meta-char escaping,
+  multiple `${sampleId}` references.
+
+### What the nf-test suite covers (5 cases)
 
 The nf-test suite in `subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test`
-exercises the full sub-workflow (validate → reshape) against the bundled
-fixtures under `tests/data/` and `tests/fastqs/`. The cases are:
+exercises the **full sub-workflow emit path** (validate → reshape →
+emit) against the bundled fixtures. Uses structural assertions (not
+snapshots) because the CSV contains absolute fastq paths that include
+the workdir hash and would produce a different MD5 every run:
 
-- **bcl2fastq — happy path — default opts** — runs the sub-workflow
-  end-to-end against `illumina_bcl2fastq.csv` and the canonical fastq
-  fixtures; snapshot asserts the produced CSV filename and the
-  versions filename.
-- **bcl2fastq — with strandedness column** — exercises the
-  `opts.strandedness = 'reverse'` path; snapshot asserts the CSV filename.
-- **LRM — happy path — default opts** — same, but against the
-  Local Run Manager format (`illumina_lrm.csv`).
-- **missing fastq match — should fail with IllegalArgumentException** —
-  uses `illumina_lrm_with_orphan.csv`, which adds a `sample_orphan`
-  row that has no matching fastqs. The test asserts the workflow fails
-  and the error report contains `sample_orphan`.
+- **bcl2fastq — happy path — default opts** — asserts `workflow.success`,
+  the emit channel is non-empty, the emitted filename ends with
+  `illumina_bcl2fastq.nfcore.csv`, and versions are emitted.
+- **bcl2fastq — with strandedness column** — same plus asserts the
+  CSV header starts with `sample,fastq_1,fastq_2,strandedness` and
+  every row ends with `,reverse` (the strandedness value).
+- **LRM — happy path — default opts** — same plus asserts the
+  CSV row count is 4 (matches bcl2fastq).
+- **missing fastq match — should fail** — uses
+  `illumina_lrm_with_orphan.csv`; asserts `workflow.failed` and the
+  error report contains `sample_orphan`.
 - **stub** — runs with `options "-stub"` so the processes produce
-  empty placeholder outputs without actually shelling out to `groovy`.
-  The nf-core convention requires every sub-workflow to pass at least
-  a stub test.
+  empty placeholder outputs without actually shelling out to Groovy.
+  Required by the nf-core convention.
 
 Each test cleans up its own scratch directory
 (`tests/.nfcore_test_output/`) via the `cleanup` block.
 
-Snapshot files (`tests/main.nf.test.snap`) are auto-generated on the
-first nf-test run and committed alongside the test file — this is the
-nf-core convention. To update snapshots:
+### Why two test suites
 
-```bash
-nf-test test \
-    subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test \
-    --update-snapshot
-```
+| Layer | Catches | Speed |
+|---|---|---|
+| **unit** (`bin/test.sh --unit`) | semantic regressions in `lib/` — every parser, validator, matching, opts-coercion case | ~10 s |
+| **nf-test** (`bin/test.sh --nf-test`) | wire regressions — module wrapping, bash/Groovy subprocess, Nextflow path staging, emit channel shape | ~30 s |
+| **smoke** (`bin/test.sh --smoke`) | full end-to-end via `main.nf` | ~60 s |
 
-### What the bespoke Groovy suite (pre-nf-core) covered
-
-The project's first release (v0.1.0) shipped with 79 bespoke Groovy
-unit tests covering every public-API edge case (parser edge cases, all
-coercion footguns, regex escaping, every `validate` overload). They
-were retired in the nf-core restructure in favour of nf-test's
-snapshot + nf-core lint pattern. The behaviours they covered are still
-guaranteed by the source — they're just no longer individually
-asserted in CI.
-
-If you need a behaviour regression test, add it as a new nf-test
-case, or look at the deleted files in git history
-(`tests/test_parser.groovy`, `tests/test_reshaper.groovy`,
-`tests/test_validator.groovy`, `tests/test_options.groovy`,
-`tests/test_matching.groovy`) for the original assertions.
+Each layer catches a different class of bug. CI runs all three on
+every PR.
 
 ## Caveats and extension points
 

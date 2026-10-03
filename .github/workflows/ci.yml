@@ -139,6 +139,43 @@ jobs:
           echo "✓ nf-core structural check passed"
 
   # ---------------------------------------------------------------------------
+  # unit: lib-level unit tests. Pure Groovy, no Nextflow, no nf-test.
+  # Runs in ~10 seconds and catches every parser/validate/reshape/
+  # matching/opts-coercion edge case. The test job below catches the
+  # Nextflow wire (module wrapping, path staging, emit channel);
+  # together the two layers cover both the semantics and the wire.
+  # ---------------------------------------------------------------------------
+  unit:
+    name: Unit tests (lib)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Groovy
+        env:
+          GROOVY_VERSION: '4.0.33'
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y --no-install-recommends unzip ca-certificates
+          curl -fsSL \
+            "https://dlcdn.apache.org/groovy/${GROOVY_VERSION}/distribution/apache-groovy-binary-${GROOVY_VERSION}.zip" \
+            -o /tmp/groovy.zip
+          sudo unzip -q /tmp/groovy.zip -d /opt/
+          sudo ln -sf "/opt/groovy-${GROOVY_VERSION}/bin/groovy" /usr/local/bin/groovy
+          sudo ln -sf "/opt/groovy-${GROOVY_VERSION}/bin/groovyc" /usr/local/bin/groovyc
+          groovy --version
+
+      - name: Run unit tests
+        run: bin/test.sh --unit
+
+  # ---------------------------------------------------------------------------
   # test: nf-test suite + Nextflow smoke test, on a matrix of Nextflow
   # patch versions. fail-fast: false so a failure on one version still
   # surfaces the result on the others (useful when one line regresses).
