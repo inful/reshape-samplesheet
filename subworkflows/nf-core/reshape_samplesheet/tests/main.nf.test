@@ -29,9 +29,9 @@ nextflow_workflow {
             params { }
             workflow {
                 """
-                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv', checkIfExists: true)
-                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
-                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
                 input[3] = [:]
                 """
             }
@@ -60,9 +60,9 @@ nextflow_workflow {
             params { }
             workflow {
                 """
-                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv', checkIfExists: true)
-                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
-                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
                 input[3] = [strandedness: 'reverse']
                 """
             }
@@ -89,9 +89,9 @@ nextflow_workflow {
             params { }
             workflow {
                 """
-                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm.csv', checkIfExists: true)
-                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
-                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
                 input[3] = [:]
                 """
             }
@@ -120,9 +120,9 @@ nextflow_workflow {
                 """
                 // Samplesheet has an extra Sample_ID (sample_orphan) that has
                 // no matching fastqs. validate() throws → sub-workflow fails.
-                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm_with_orphan.csv', checkIfExists: true)
-                input[1] = file('\${projectDir}/../../../../tests/fastqs',                            checkIfExists: true)
-                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output',               checkIfExists: false)
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm_with_orphan.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
                 input[3] = [:]
                 """
             }
@@ -147,9 +147,9 @@ nextflow_workflow {
             params { }
             workflow {
                 """
-                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv', checkIfExists: true)
-                input[1] = file('\${projectDir}/../../../../tests/fastqs',             checkIfExists: true)
-                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output', checkIfExists: false)
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
                 input[3] = [:]
                 """
             }
