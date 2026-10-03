@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software in a publication, please cite it using the
+  metadata from this file.
+type: software
+title: "reshape-samplesheet"
+version: 0.1.0
+date-released: 2026-10-03
+authors:
+  - family-names: Vignes
+    given-names: Jone Marius
+    alias: inful
+repository-code: "https://github.com/inful/reshape-samplesheet"
+url: "https://github.com/inful/reshape-samplesheet"
+license: MIT
+keywords:
+  - nextflow
+  - nf-core
+  - dsl2
+  - subworkflow
+  - samplesheet
+  - illumina
+  - bcl2fastq
+  - local-run-manager
+  - bioinformatics
+  - genomics
+abstract: >-
+  Reshape-samplesheet reads an Illumina samplesheet (bcl2fastq or Local
+  Run Manager format), matches Sample_IDs against a directory of fastq
+  files produced by bcl2fastq (or any tool that uses the
+  {SampleID}_S{N}_L00{Lane}_R{1,2}_001.fastq.gz naming convention), and
+  emits a generic nf-core samplesheet (sample,fastq_1,fastq_2) that can
+  be fed straight into an nf-core module. Pure Groovy — no Python, no
+  extra runtime dependencies — so it works with any Nextflow install
+  out of the box. Throws strict IllegalArgumentException errors on
+  malformed input rather than producing silent partial output.
+references:
+  - type: software
+    title: Nextflow
+    authors:
+      - name: Paolo Di Tommaso
+      - name: Michael W. Bevil
+    repository-code: "https://github.com/nextflow-io/nextflow"
+    license: Apache-2.0

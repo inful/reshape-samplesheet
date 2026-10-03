@@ -1,0 +1,139 @@
+# GitHub Actions CI for reshape-samplesheet.
+#
+# Two jobs:
+#   1. lint  — verifies the manifest fields stay sensible (name, version,
+#              author, nextflowVersion, mainScript). Cheap, runs first.
+#   2. test  — runs the full unit suite (79 tests via groovy) AND the
+#              Nextflow smoke test on a matrix of Nextflow versions.
+#              Pin specific patch versions below to keep builds
+#              reproducible; bump periodically.
+#
+# To add a new Nextflow line (e.g. 27.x when ready), add another entry to
+# matrix.nextflow under the `test` job.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs when a new commit lands on the same branch/PR.
+# Saves CI minutes on rapid pushes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default GITHUB_TOKEN to read-only. We don't write back to the repo.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # lint: cheap manifest sanity checks. No Nextflow version pinned — always
+  # uses the latest stable for the lint job since we're just verifying
+  # `nextflow config` can parse our nextflow.config.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Nextflow (latest stable)
+        run: |
+          set -euo pipefail
+          curl -s https://get.nextflow.io | bash
+          chmod +x nextflow
+          sudo mv nextflow /usr/local/bin/nextflow
+          nextflow -version
+
+      - name: Verify manifest fields
+        run: |
+          set -euo pipefail
+          NAME=$(nextflow config manifest.name)
+          VERSION=$(nextflow config manifest.version)
+          AUTHOR=$(nextflow config manifest.author)
+          MIN_NF=$(nextflow config manifest.nextflowVersion)
+          MAIN=$(nextflow config manifest.mainScript)
+          test "$NAME" = "reshape-samplesheet" \
+            || { echo "::error::manifest.name should be 'reshape-samplesheet', got: $NAME"; exit 1; }
+          test "$MAIN" = "main.nf" \
+            || { echo "::error::manifest.mainScript should be 'main.nf', got: $MAIN"; exit 1; }
+          # nextflowVersion must reference 22.10+ (the DSL2 minimum we support)
+          echo "$MIN_NF" | grep -q '22\.10' \
+            || { echo "::error::manifest.nextflowVersion should reference 22.10+, got: $MIN_NF"; exit 1; }
+          echo "::group::Manifest values"
+          echo "  name              = $NAME"
+          echo "  version           = $VERSION"
+          echo "  author            = $AUTHOR"
+          echo "  nextflowVersion   = $MIN_NF"
+          echo "  mainScript        = $MAIN"
+          echo "::endgroup::"
+
+  # ---------------------------------------------------------------------------
+  # test: full unit suite + Nextflow smoke test, on a matrix of Nextflow
+  # patch versions. fail-fast: false so a failure on one version still
+  # surfaces the result on the others (useful when one line regresses).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests (Nextflow ${{ matrix.nextflow }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        nextflow:
+          - '25.10.4'   # latest 25.x patch line
+          - '26.04.4'   # primary development target (per nextflow.config)
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Groovy is needed for `bin/test.sh --full`. We install it via SDKMAN
+      # (matches the README install instructions). SDKMAN_AUTO_ANSWER avoids
+      # the interactive license/telemetry prompts.
+      - name: Install Groovy (for unit tests)
+        env:
+          SDKMAN_AUTO_ANSWER: 'true'
+        run: |
+          set -euo pipefail
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk install groovy
+          groovy --version
+
+      # NXF_VER is the canonical way to pin Nextflow without forking the
+      # install script. The get.nextflow.io script honours it on first run.
+      - name: Install Nextflow ${{ matrix.nextflow }}
+        env:
+          NXF_VER: ${{ matrix.nextflow }}
+        run: |
+          set -euo pipefail
+          curl -s https://get.nextflow.io | bash
+          chmod +x nextflow
+          sudo mv nextflow /usr/local/bin/nextflow
+          nextflow -version
+
+      - name: Run unit test suite (79 tests)
+        run: bin/test.sh --full
+
+      - name: Run Nextflow smoke test
+        run: bin/test.sh --smoke

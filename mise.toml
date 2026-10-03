@@ -1,0 +1,9 @@
+# Dev-time tool pins. The runtime is Nextflow + Groovy which the user
+# already has if they have Nextflow installed. These are only needed
+# to run the unit tests in `bin/test.sh` without Nextflow.
+#
+#   mise use --yes java@21 groovy@latest
+#
+[tools]
+java   = "21"        # Nextflow 26 supports Java 17-26
+groovy = "latest"    # required only for `bin/test.sh`

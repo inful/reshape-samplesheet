@@ -1,0 +1,13 @@
+.nextflow/
+.nextflow.log*
+.vscode/
+work/
+results/
+test_output/
+# Ad-hoc test-scratch directories created during end-to-end testing
+# (e.g. `.test_partial/`, `.test_missing_fastqs/`)
+.test_*/
+.DS_Store
+nextflow
+nextflow-*
+*.log

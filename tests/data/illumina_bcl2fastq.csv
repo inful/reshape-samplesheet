@@ -1,0 +1,24 @@
+[Header]
+IEMFileVersion,4
+Date,10/03/2026
+Workflow,GenerateFASTQ
+Application,FASTQ Only
+Assay,Nextera
+Description,
+Chemistry,Amplicon
+
+[Reads]
+Read1Cycles,151
+Read2Cycles,151
+Index1Cycles,8
+Index2Cycles,8
+
+[Manifests]
+A,H7JH3DSX3,A001,1-96
+
+[Data]
+Sample_ID,Sample_Name,Sample_Plate,Sample_Well,I7_Index_ID,index,I5_Index_ID,index2,Sample_Project,Description
+sample_A,sample_A,,,UDI0001,ATCGACGT,UDI0001,GCTAGCTA,project_x,
+sample_B,sample_B,,,UDI0002,GGCTAACC,UDI0002,TGACCGAA,project_x,
+sample_C,sample_C,,,UDI0003,AACCGGTT,UDI0003,CCAACCGG,project_x,
+sample_D,sample_D,,,UDI0004,TTACCGAA,UDI0004,AATTCCGG,project_x,
