@@ -113,7 +113,7 @@ jobs:
           python -m pip install --upgrade nf-core
 
       - name: Run nf-core subworkflows lint
-        run: nf-core subworkflows lint reshape_samplesheet --fail-on-warn
+        run: nf-core subworkflows lint reshape_samplesheet --fail-warned
 
   # ---------------------------------------------------------------------------
   # test: nf-test suite + Nextflow smoke test, on a matrix of Nextflow
@@ -150,7 +150,7 @@ jobs:
           curl -fsSL https://get.nf-test.com | bash
           chmod +x nf-test
           sudo mv nf-test /usr/local/bin/nf-test
-          nf-test --version 2>&1 | head -3
+          nf-test version 2>&1 | head -3
 
       - name: Install Groovy (for nf-test)
         env:
