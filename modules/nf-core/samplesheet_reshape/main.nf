@@ -53,8 +53,7 @@ process SAMPLESHEET_RESHAPE {
     groovy -cp lib reshape.groovy
 
     # Move the CSV into the workdir (the output glob is basename only)
-    # so Nextflow can capture it. The basename is fixed in the Groovy
-    # script: block above as `basename`.
+    # so Nextflow can capture it.
     if [ -f '${output_dir_str}/${basename}.nfcore.csv' ]; then
         mv '${output_dir_str}/${basename}.nfcore.csv' '${basename}.nfcore.csv'
     fi
@@ -66,8 +65,10 @@ process SAMPLESHEET_RESHAPE {
     """
 
     stub:
+    // Stub doesn't have access to variables from the main script: block,
+    // so inline the regex + the version label.
     """
-    touch ${basename}.nfcore.csv
+    touch ${samplesheet.name.replaceFirst(~/\.[^.]+$/, '')}.nfcore.csv
     cat << END_VERSIONS > versions.yml
     "${task.process}":
         samplesheet-reshape: ${workflow.manifest.version}
