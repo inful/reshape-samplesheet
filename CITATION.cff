@@ -4,7 +4,7 @@ message: >-
   metadata from this file.
 type: software
 title: "reshape-samplesheet"
-version: 0.1.0
+version: 0.2.0
 date-released: 2026-10-03
 authors:
   - family-names: Vignes
