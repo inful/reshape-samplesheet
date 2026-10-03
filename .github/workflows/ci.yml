@@ -113,7 +113,7 @@ jobs:
           python -m pip install --upgrade nf-core
 
       - name: Run nf-core subworkflows lint
-        run: nf-core subworkflows lint reshape_samplesheet --dir  --fail-on-warn
+        run: nf-core subworkflows lint reshape_samplesheet --fail-on-warn
 
   # ---------------------------------------------------------------------------
   # test: nf-test suite + Nextflow smoke test, on a matrix of Nextflow
@@ -141,10 +141,18 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # Groovy is needed for `bin/test.sh --full`. Install a known-good
-      # Groovy 4.x binary directly (SDKMAN's installer has compatibility
-      # issues with `set -u` in its helper scripts).
-      - name: Install Groovy (for unit tests)
+      # Groovy + nf-test are needed for `bin/test.sh --nf-test`. Install
+      # them directly from upstream (SDKMAN's installer has set -u
+      # incompatibilities with our pipeline).
+      - name: Install nf-test
+        run: |
+          set -euo pipefail
+          curl -fsSL https://get.nf-test.com | bash
+          chmod +x nf-test
+          sudo mv nf-test /usr/local/bin/nf-test
+          nf-test --version 2>&1 | head -3
+
+      - name: Install Groovy (for nf-test)
         env:
           GROOVY_VERSION: '4.0.33'
         run: |
