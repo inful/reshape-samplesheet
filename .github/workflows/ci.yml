@@ -110,21 +110,21 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # Groovy is needed for `bin/test.sh --full`. We install it via SDKMAN
-      # (matches the README install instructions). SDKMAN_AUTO_ANSWER avoids
-      # the interactive license/telemetry prompts.
+      # Groovy is needed for `bin/test.sh --full`. Install a known-good
+      # Groovy 4.x binary directly (SDKMAN's installer has compatibility
+      # issues with `set -u` in its helper scripts).
       - name: Install Groovy (for unit tests)
         env:
-          SDKMAN_AUTO_ANSWER: 'true'
+          GROOVY_VERSION: '4.0.27'
         run: |
           set -euo pipefail
-          curl -s "https://get.sdkman.io" | bash
-          # SDKMAN's init script does [ -z "$SDKMAN_CANDIDATES_API" ] on line 20,
-          # which trips under `set -u`. Disable nounset just for the source.
-          set +u
-          source "$HOME/.sdkman/bin/sdkman-init.sh"
-          set -u
-          sdk install groovy
+          sudo apt-get install -y --no-install-recommends unzip ca-certificates
+          curl -fsSL \
+            "https://archive.apache.org/dist/groovy/apache-groovy-binary-${GROOVY_VERSION}.zip" \
+            -o /tmp/groovy.zip
+          sudo unzip -q /tmp/groovy.zip -d /opt/
+          sudo ln -sf "/opt/groovy-${GROOVY_VERSION}/bin/groovy" /usr/local/bin/groovy
+          sudo ln -sf "/opt/groovy-${GROOVY_VERSION}/bin/groovyc" /usr/local/bin/groovyc
           groovy --version
 
       # NXF_VER is the canonical way to pin Nextflow without forking the
