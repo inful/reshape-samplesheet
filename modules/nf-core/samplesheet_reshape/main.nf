@@ -20,6 +20,13 @@ process SAMPLESHEET_RESHAPE {
     path "${samplesheet.name.replaceFirst(~/\.[^.]+$/, '')}.nfcore.csv"  , emit: csv
     path "versions.yml"                                                  , emit: versions
 
+    // After the process completes, copy the emitted CSV and versions
+    // file into the user's output_dir on the host filesystem. This is
+    // what nf-core modules use to surface outputs to the pipeline
+    // results directory; without it the files stay inside the workdir
+    // and downstream `ch_out.csv.collect()` returns work-dir paths.
+    publishDir "${output_dir}", mode: 'copy', overwrite: true
+
     script:
     // Stringify the opts Map so the shell + Groovy subprocess can parse
     // it cleanly. Empty / null collapses to {}.
