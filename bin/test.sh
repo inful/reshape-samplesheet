@@ -82,26 +82,37 @@ EOF
     fi
     local outdir=".test_output"
     rm -rf "$outdir"
-    echo "==> Running smoke test (nextflow run main.nf → $outdir/)"
-    # Use the default 3-column output (no --strandedness). The lib's
-    # strandedness coercion is tested separately; the smoke test just
-    # confirms the pipeline runs end-to-end against the new nf-core layout.
-    nextflow -q run main.nf \
+    mkdir -p "$outdir"
+    echo "==> Running smoke test (nextflow run main.nf → workDir)"
+    # The nf-core module emits the CSV via Nextflow's work-dir staging
+    # (publishDir is set by the calling pipeline, not by the module —
+    # that's the nf-core convention). The smoke test just verifies
+    # the workflow completes and prints the CSV path the sub-workflow
+    # emitted.
+    local csv_path
+    csv_path=$(nextflow -q run main.nf \
         --samplesheet tests/data/illumina_bcl2fastq.csv \
         --fastq_dir   tests/fastqs \
         --outdir      "$outdir" \
-        --recursive    false
-    local csv="$outdir/illumina_bcl2fastq.nfcore.csv"
-    if [[ ! -s "$csv" ]]; then
-        echo "FAIL: expected $csv to exist and be non-empty" >&2
+        --recursive    false 2>&1 \
+        | tee /dev/stderr \
+        | grep -E '^Reshaped CSV:' \
+        | head -1 \
+        | sed 's/^Reshaped CSV: //')
+    if [[ -z "$csv_path" ]]; then
+        echo "FAIL: sub-workflow did not emit a CSV path" >&2
         exit 1
     fi
-    if [[ "$(head -1 "$csv")" != "sample,fastq_1,fastq_2" ]]; then
-        echo "FAIL: unexpected header in $csv" >&2
-        head -1 "$csv" >&2
+    if [[ ! -s "$csv_path" ]]; then
+        echo "FAIL: emitted CSV path '$csv_path' is empty or missing" >&2
         exit 1
     fi
-    echo "==> Smoke test passed: $csv"
+    if [[ "$(head -1 "$csv_path")" != "sample,fastq_1,fastq_2" ]]; then
+        echo "FAIL: unexpected header in $csv_path" >&2
+        head -1 "$csv_path" >&2
+        exit 1
+    fi
+    echo "==> Smoke test passed: $csv_path"
 }
 
 case "$mode" in

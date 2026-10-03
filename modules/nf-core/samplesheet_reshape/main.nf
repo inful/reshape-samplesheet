@@ -3,13 +3,6 @@ process SAMPLESHEET_RESHAPE {
     tag { "${samplesheet}" }
     label 'process_single'
 
-    // After the process completes, copy the emitted CSV and versions
-    // file into the user's output_dir on the host filesystem. This is
-    // what nf-core modules use to surface outputs to the pipeline
-    // results directory; without it the files stay inside the workdir
-    // and downstream `ch_out.csv.collect()` returns work-dir paths.
-    publishDir "${output_dir}", mode: 'copy', overwrite: true
-
     // Conda + container for portable execution; falls back to host Groovy.
     conda { params.enable_conda ? "groovy=4.0.21" : null }
     container { params.enable_docker ? "groovy:4.0-jdk21" : null }
