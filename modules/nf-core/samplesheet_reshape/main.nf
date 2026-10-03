@@ -10,14 +10,13 @@ process SAMPLESHEET_RESHAPE {
     input:
     path samplesheet
     path fastq_dir
-    // `output_dir` is a String rather than a path so it isn't staged into
-    // the task workdir. The script creates the directory itself, which is
-    // more reliable than relying on Nextflow's path staging (which can be
-    // a read-only bind-mount in some container setups).
-    val output_dir
+    path output_dir
     val opts
 
     output:
+    // Output glob: a single .nfcore.csv file in the workdir. The
+    // module script writes the file into `output_dir` (the staged
+    // directory) and then mv's it into the workdir for capture.
     path "${samplesheet.name.replaceFirst(~/\.[^.]+$/, '')}.nfcore.csv"  , emit: csv
     path "versions.yml"                                                  , emit: versions
 
@@ -25,34 +24,40 @@ process SAMPLESHEET_RESHAPE {
     // Stringify the opts Map so the shell + Groovy subprocess can parse
     // it cleanly. Empty / null collapses to {}.
     def opts_json = groovy.json.JsonOutput.toJson(opts ?: [:])
-    // ${samplesheet}, ${fastq_dir} in the script: block resolve to the
-    // staged paths inside the task workdir, which is what we want —
-    // never use .toRealPath() here, that bypasses Nextflow's staging.
+    // Resolve the staged paths explicitly. .toString() on the path
+    // inputs gives the workdir-relative staged path (or absolute, in
+    // some Nextflow stage modes), which is what we pass to Groovy.
+    def samplesheet_str = samplesheet.toString()
+    def fastq_dir_str  = fastq_dir.toString()
+    def output_dir_str = output_dir.toString()
+    def basename       = samplesheet.name.replaceFirst(~/\.[^.]+$/, '')
     """
     # Bring SamplesheetReshape + helpers into the task workdir.
     mkdir -p lib
     find ${projectDir}/lib -maxdepth 1 -name '*.groovy' -exec cp -t lib {} +
 
-    # Make sure the output directory exists before we try to write
-    # into it. Using mkdir -p (idempotent) is more reliable than
-    # relying on writeReshaped()'s mkdirs() call.
-    mkdir -p '${output_dir}'
+    # Make sure the output directory exists. Stage modes can vary
+    # (copy vs symlink) and Nextflow's mkdirs() inside the lib isn't
+    # always reliable on a freshly-created (empty) staged path.
+    mkdir -p '${output_dir_str}'
 
     # Write the Groovy entry point to a file and run it.
     cat > reshape.groovy << 'GROOVY'
     SamplesheetReshape.writeReshaped(
-        new File('${output_dir}'),
-        new File('${samplesheet}'),
-        new File('${fastq_dir}'),
+        new File('${output_dir_str}'),
+        new File('${samplesheet_str}'),
+        new File('${fastq_dir_str}'),
         new groovy.json.JsonSlurper().parseText('${opts_json}')
     )
     GROOVY
     groovy -cp lib reshape.groovy
 
-    # Move the CSV to a stable name in the workdir so Nextflow can
-    # capture it (the output pattern is the basename only, in the workdir).
-    BASENAME=\$(echo '${samplesheet}' | sed 's/\\.[^.]*\$//')
-    mv '${output_dir}/\${BASENAME}.nfcore.csv' '\${BASENAME}.nfcore.csv'
+    # Move the CSV into the workdir (the output glob is basename only)
+    # so Nextflow can capture it. The basename is fixed in the Groovy
+    # script: block above as `basename`.
+    if [ -f '${output_dir_str}/${basename}.nfcore.csv' ]; then
+        mv '${output_dir_str}/${basename}.nfcore.csv' '${basename}.nfcore.csv'
+    fi
 
     cat << END_VERSIONS > versions.yml
     "${task.process}":
@@ -62,8 +67,7 @@ process SAMPLESHEET_RESHAPE {
 
     stub:
     """
-    BASENAME=\$(echo '${samplesheet}' | sed 's/\\.[^.]*\$//')
-    touch \${BASENAME}.nfcore.csv
+    touch ${basename}.nfcore.csv
     cat << END_VERSIONS > versions.yml
     "${task.process}":
         samplesheet-reshape: ${workflow.manifest.version}

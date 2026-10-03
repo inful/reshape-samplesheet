@@ -48,11 +48,7 @@ workflow RESHAPE_SAMPLESHEET {
     ch_versions = ch_versions.mix( SAMPLESHEET_VALIDATE.out.versions )
 
     // Reshape: produces the nf-core CSV in ch_output_dir.
-    // We map the output_dir to a String before passing to the module
-    // because the module declares it as `val output_dir` rather than
-    // `path output_dir` (so the script can mkdir + write inside it
-    // without fighting Nextflow's read-only path staging).
-    SAMPLESHEET_RESHAPE ( ch_samplesheet, ch_fastq_dir, ch_output_dir.map { it.toString() }, ch_opts )
+    SAMPLESHEET_RESHAPE ( ch_samplesheet, ch_fastq_dir, ch_output_dir, ch_opts )
     ch_versions = ch_versions.mix( SAMPLESHEET_RESHAPE.out.versions )
 
     emit:
