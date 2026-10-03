@@ -61,11 +61,14 @@ jobs:
       - name: Verify manifest fields
         run: |
           set -euo pipefail
-          NAME=$(nextflow config manifest.name)
-          VERSION=$(nextflow config manifest.version)
-          AUTHOR=$(nextflow config manifest.author)
-          MIN_NF=$(nextflow config manifest.nextflowVersion)
-          MAIN=$(nextflow config manifest.mainScript)
+          # `nextflow config <key>` in 25+ sometimes treats the key as a remote
+          # repo path (e.g. tries to fetch manifest.name from nextflow-io/manifest.name).
+          # Grep the nextflow.config directly — it's simpler and version-agnostic.
+          NAME=$(awk -F"'" '/^[[:space:]]*name[[:space:]]*=/{print $2; exit}' nextflow.config)
+          VERSION=$(awk -F"'" '/^[[:space:]]*version[[:space:]]*=/{print $2; exit}' nextflow.config)
+          AUTHOR=$(awk -F"'" '/^[[:space:]]*author[[:space:]]*=/{print $2; exit}' nextflow.config)
+          MIN_NF=$(awk -F"'" '/^[[:space:]]*nextflowVersion[[:space:]]*=/{print $2; exit}' nextflow.config)
+          MAIN=$(awk -F"'" '/^[[:space:]]*mainScript[[:space:]]*=/{print $2; exit}' nextflow.config)
           test "$NAME" = "reshape-samplesheet" \
             || { echo "::error::manifest.name should be 'reshape-samplesheet', got: $NAME"; exit 1; }
           test "$MAIN" = "main.nf" \
@@ -116,7 +119,11 @@ jobs:
         run: |
           set -euo pipefail
           curl -s "https://get.sdkman.io" | bash
+          # SDKMAN's init script does [ -z "$SDKMAN_CANDIDATES_API" ] on line 20,
+          # which trips under `set -u`. Disable nounset just for the source.
+          set +u
           source "$HOME/.sdkman/bin/sdkman-init.sh"
+          set -u
           sdk install groovy
           groovy --version
 
