@@ -28,8 +28,11 @@ process SAMPLESHEET_VALIDATE {
     # projectDir is the directory of the workflow that includes us
     # (this module's parent pipeline). When run from this repo root
     # that's the lib/ alongside subworkflows/ and modules/.
+    #
     mkdir -p lib
-    find ${projectDir}/lib -maxdepth 1 -name '*.groovy' -exec cp -t lib {} +
+    for f in ${projectDir}/lib/*.groovy; do
+        [ -f "\$f" ] && cp "\$f" lib/
+    done
 
     # Write the Groovy entry point to a file (groovy -e with multi-line
     # scripts parses indentation awkwardly). Then run it.

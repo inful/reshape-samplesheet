@@ -1,0 +1,6 @@
+[PIPELINE] reshape-samplesheet 0.1.0 | profile=standard
+[WORKDIR] /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/70dbd925b74c57805ba8ad8365227a8c/work
+[PROCESS 17/1e7d11] RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_bcl2fastq.csv)
+[PROCESS a6/6509ea] RESHAPE_SAMPLESHEET:SAMPLESHEET_RESHAPE (illumina_bcl2fastq.csv)
+
+[SUCCESS] completed=2 failed=0 cached=0

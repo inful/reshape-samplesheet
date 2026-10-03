@@ -33,8 +33,11 @@ process SAMPLESHEET_RESHAPE {
     def basename       = samplesheet.name.replaceFirst(~/\.[^.]+$/, '')
     """
     # Bring SamplesheetReshape + helpers into the task workdir.
+    #
     mkdir -p lib
-    find ${projectDir}/lib -maxdepth 1 -name '*.groovy' -exec cp -t lib {} +
+    for f in ${projectDir}/lib/*.groovy; do
+        [ -f "\$f" ] && cp "\$f" lib/
+    done
 
     # Make sure the output directory exists. When output_dir is
     # declared checkIfExists: false in the nf-test, Nextflow creates

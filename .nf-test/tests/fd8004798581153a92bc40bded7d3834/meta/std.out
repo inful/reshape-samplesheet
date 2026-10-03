@@ -1,0 +1,91 @@
+[PIPELINE] reshape-samplesheet 0.1.0 | profile=standard
+[WORKDIR] /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work
+[PROCESS 04/8c500f] RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_lrm_with_orphan.csv)
+[PROCESS 1b/6571ed] RESHAPE_SAMPLESHEET:SAMPLESHEET_RESHAPE (illumina_lrm_with_orphan.csv)
+[ERROR] RESHAPE_SAMPLESHEET:SAMPLESHEET_RESHAPE (illumina_lrm_with_orphan.csv)
+exit: 1
+cmd: # Bring SamplesheetReshape + helpers into the task workdir. # mkdir -p lib for f in /Users/inful/Code/github.com/inful/nextflow-reshape/lib/*.groovy; do [ -f "$f" ] && cp "$f" lib/...
+stderr: 	at java.base/java.lang.reflect.Method.invoke(Method.java:580) | 	at org.codehaus.groovy.tools.GroovyStarter.rootLoader(GroovyStarter.java:150) | 	at org.codehaus.groovy.tools.GroovyStarter.main(GroovyStarter.java:52) |  | java.lang.IllegalArgumentException: Cannot reshape samplesheet /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/1b/6571ed63ef8acd70b27312b2ca21ea/illumina_lrm_with_orphan.csv: 1 sample(s) have no matching fastq files in /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/1b/6571ed63ef8acd70b27312b2ca21ea/fastqs: |   sample_orphan | 	at SamplesheetReshaper.reshapeImpl(SamplesheetReshaper.groovy:89) | 	at SamplesheetReshaper.writeReshapedImpl(SamplesheetReshaper.groovy:120) | 	at SamplesheetReshape.writeReshaped(SamplesheetReshape.groovy:222) | 	at reshape.run(reshape.groovy:5)
+workdir: /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/1b/6571ed63ef8acd70b27312b2ca21ea
+[ERROR] ERROR ~ Error executing process > 'RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_lrm_with_orphan.csv)'
+
+Caused by:
+  Process `RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_lrm_with_orphan.csv)` terminated with an error exit status (1)
+
+
+Command executed:
+
+  # Bring SamplesheetReshape + helpers into the task workdir.
+  # projectDir is the directory of the workflow that includes us
+  # (this module's parent pipeline). When run from this repo root
+  # that's the lib/ alongside subworkflows/ and modules/.
+  #
+  mkdir -p lib
+  for f in /Users/inful/Code/github.com/inful/nextflow-reshape/lib/*.groovy; do
+      [ -f "$f" ] && cp "$f" lib/
+  done
+  
+  # Write the Groovy entry point to a file (groovy -e with multi-line
+  # scripts parses indentation awkwardly). Then run it.
+  cat > validate.groovy << 'GROOVY'
+  SamplesheetReshape.validate(
+      new File('illumina_lrm_with_orphan.csv'),
+      new File('fastqs'),
+      new groovy.json.JsonSlurper().parseText('{}')
+  )
+  GROOVY
+  groovy -cp lib validate.groovy
+  
+  cat << END_VERSIONS > versions.yml
+  "RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE":
+      samplesheet-validate: 0.1.0
+  END_VERSIONS
+
+Command exit status:
+  1
+
+Command output:
+  (empty)
+
+Command error:
+  okt. 03, 2026 7:56:33 P.M. groovy.ui.GroovyMain run
+  SEVERE: Caught: {0}
+  java.lang.IllegalArgumentException: Cannot reshape samplesheet illumina_lrm_with_orphan.csv: 1 sample(s) have no matching fastq files in fastqs:
+    sample_orphan
+  	at SamplesheetReshaper.reshapeImpl(SamplesheetReshaper.groovy:89)
+  	at SamplesheetReshape.reshape(SamplesheetReshape.groovy:183)
+  	at SamplesheetReshape.validate(SamplesheetReshape.groovy:92)
+  	at validate.run(validate.groovy:4)
+  	at groovy.lang.GroovyShell.runScriptOrMainOrTestOrRunnable(GroovyShell.java:322)
+  	at groovy.lang.GroovyShell.run(GroovyShell.java:468)
+  	at groovy.lang.GroovyShell.run(GroovyShell.java:457)
+  	at groovy.ui.GroovyprocessOnce(Groovyjava:851)
+  	at groovy.ui.Groovyrun(Groovyjava:450)
+  	at groovy.ui.GroovyMain$GroovyCommand.process(Groovyjava:355)
+  	at groovy.ui.GroovyprocessArgs(Groovyjava:168)
+  	at groovy.ui.Groovymain(Groovyjava:127)
+  	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+  	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+  	at org.codehaus.groovy.tools.GroovyStarter.rootLoader(GroovyStarter.java:150)
+  	at org.codehaus.groovy.tools.GroovyStarter.main(GroovyStarter.java:52)
+  
+  java.lang.IllegalArgumentException: Cannot reshape samplesheet illumina_lrm_with_orphan.csv: 1 sample(s) have no matching fastq files in fastqs:
+    sample_orphan
+  	at SamplesheetReshaper.reshapeImpl(SamplesheetReshaper.groovy:89)
+  	at SamplesheetReshape.reshape(SamplesheetReshape.groovy:183)
+  	at SamplesheetReshape.validate(SamplesheetReshape.groovy:92)
+  	at validate.run(validate.groovy:4)
+
+Work dir:
+  /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/04/8c500f8b1997137dbc5cdd9b20facc
+
+Tip: when you have fixed the problem you can continue the execution adding the option `-resume` to the run command line
+
+ -- Check '/Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/meta/nextflow.log' file for details
+[ERROR] RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_lrm_with_orphan.csv)
+exit: 1
+cmd: # Bring SamplesheetReshape + helpers into the task workdir. # projectDir is the directory of the workflow that includes us # (this module's parent pipeline). When run from this repo root #...
+stderr: 	at java.base/java.lang.reflect.Method.invoke(Method.java:580) | 	at org.codehaus.groovy.tools.GroovyStarter.rootLoader(GroovyStarter.java:150) | 	at org.codehaus.groovy.tools.GroovyStarter.main(GroovyStarter.java:52) |  | java.lang.IllegalArgumentException: Cannot reshape samplesheet /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/04/8c500f8b1997137dbc5cdd9b20facc/illumina_lrm_with_orphan.csv: 1 sample(s) have no matching fastq files in /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/04/8c500f8b1997137dbc5cdd9b20facc/fastqs: |   sample_orphan | 	at SamplesheetReshaper.reshapeImpl(SamplesheetReshaper.groovy:89) | 	at SamplesheetReshape.reshape(SamplesheetReshape.groovy:183) | 	at SamplesheetReshape.validate(SamplesheetReshape.groovy:92) | 	at validate.run(validate.groovy:4)
+workdir: /Users/inful/Code/github.com/inful/nextflow-reshape/.nf-test/tests/fd8004798581153a92bc40bded7d3834/work/04/8c500f8b1997137dbc5cdd9b20facc
+
+[FAILED] completed=2 failed=2 cached=0

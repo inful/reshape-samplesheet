@@ -1,0 +1,3 @@
+task_id	hash	native_id	name	status	exit	submit	duration	realtime	%cpu	peak_rss	peak_vmem	rchar	wchar
+1	9c/f55821	31408	RESHAPE_SAMPLESHEET:SAMPLESHEET_VALIDATE (illumina_lrm.csv)	COMPLETED	0	2026-10-03 19:56:27.435	1.8s	1.8s	-	-	-	-	-
+2	d4/1956f2	31405	RESHAPE_SAMPLESHEET:SAMPLESHEET_RESHAPE (illumina_lrm.csv)	COMPLETED	0	2026-10-03 19:56:27.420	1.9s	1.8s	-	-	-	-	-
