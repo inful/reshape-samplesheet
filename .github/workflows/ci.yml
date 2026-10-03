@@ -115,12 +115,15 @@ jobs:
       # issues with `set -u` in its helper scripts).
       - name: Install Groovy (for unit tests)
         env:
-          GROOVY_VERSION: '4.0.27'
+          GROOVY_VERSION: '4.0.33'
         run: |
           set -euo pipefail
           sudo apt-get install -y --no-install-recommends unzip ca-certificates
+          # Use dlcdn.apache.org (current downloads mirror) instead of
+          # archive.apache.org (slower historical mirror). Layout:
+          #   /groovy/<version>/distribution/apache-groovy-binary-<version>.zip
           curl -fsSL \
-            "https://archive.apache.org/dist/groovy/apache-groovy-binary-${GROOVY_VERSION}.zip" \
+            "https://dlcdn.apache.org/groovy/${GROOVY_VERSION}/distribution/apache-groovy-binary-${GROOVY_VERSION}.zip" \
             -o /tmp/groovy.zip
           sudo unzip -q /tmp/groovy.zip -d /opt/
           sudo ln -sf "/opt/groovy-${GROOVY_VERSION}/bin/groovy" /usr/local/bin/groovy
