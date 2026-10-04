@@ -175,4 +175,76 @@ nextflow_workflow {
             new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
         }
     }
+
+
+    test("bcl2fastq - samples emit - structural assertions on (meta, fastq_1, fastq_2) tuples") {
+
+        // Runs both modules for real (no stub) so the CSV on disk
+        // has actual content. Then asserts on the new `samples`
+        // emit: each tuple has the right shape, single-end
+        // detection works, and multi-lane samples surface as
+        // multiple files in the per-direction list.
+        //
+        // We don't snapshot the tuple contents (the fastq paths
+        // are workdir-relative and change every run). We assert
+        // on shape, count, and the single-end / multi-lane
+        // distinction — the load-bearing invariants.
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+
+            // The samples emit is the canonical hand-off. One tuple
+            // per Sample_ID in the bcl2fastq fixture (4 samples).
+            assert workflow.out.samples != null
+            assert workflow.out.samples.size() == 4,
+                "expected 4 sample tuples, got: ${workflow.out.samples.size()}"
+
+            // Find each sample by id and assert on its shape.
+            def byId = [:]
+            workflow.out.samples.each { entry ->
+                byId[entry[0].id] = entry
+            }
+            assert byId.keySet() as List == ['sample_A', 'sample_B', 'sample_C', 'sample_D'],
+                "expected exactly the 4 fixture sample IDs, got: ${byId.keySet()}"
+
+            // sample_A spans 2 lanes — both R1 and R2 lists
+            // should have 2 entries, and single_end is false.
+            def a = byId['sample_A']
+            assert a[0].single_end == false
+            assert a[1].size() == 2, "sample_A R1 should have 2 lanes, got: ${a[1].size()}"
+            assert a[2].size() == 2, "sample_A R2 should have 2 lanes, got: ${a[2].size()}"
+            assert a[1].every { it.toString().endsWith('.fastq.gz') },
+                "every fastq_1 entry for sample_A should be a .fastq.gz file, got: ${a[1]*.toString()}"
+
+            // sample_C is single-end — fastq_2 is empty, single_end is true.
+            def c = byId['sample_C']
+            assert c[0].single_end == true
+            assert c[1].size() == 1
+            assert c[2].isEmpty(), "sample_C R2 should be empty for single-end, got: ${c[2]}"
+
+            // sample_B and sample_D are single-lane paired-end.
+            ['sample_B', 'sample_D'].each { id ->
+                def entry = byId[id]
+                assert entry[0].single_end == false
+                assert entry[1].size() == 1
+                assert entry[2].size() == 1
+            }
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
 }

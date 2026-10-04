@@ -4,11 +4,18 @@ description: |
   match Sample_IDs against fastq files in a directory, and emit a CSV
   in the generic nf-core layout (sample,fastq_1,fastq_2[,strandedness]).
 
-  Multiple R1/R2 files per sample (e.g. across lanes) are joined into a
-  single comma-separated cell, per nf-core convention. Single-end samples
-  get an empty fastq_2 cell. Strict error contract: every malformed input
+  Multiple R1/R2 files per sample (e.g. across lanes) are RFC-4180
+  quoted and comma-joined into a single cell. Single-end samples get
+  an empty fastq_2 cell. Strict error contract: every malformed input
   throws IllegalArgumentException with the file path and all detected
   problems in one error message — no silent partial output.
+
+  Emits two views of the same data: a `csv` channel (the canonical
+  artifact) and a `samples` channel (structured tuples ready to be
+  re-tupled into a `(meta, reads)` pair by the consumer). The
+  samples emit means a downstream consumer needs only three lines
+  to feed the data into an nf-core analysis module (see
+  examples/poc/ for a fastqc-based POC).
 keywords:
   - samplesheet
   - illumina
@@ -53,9 +60,27 @@ output:
       description: |
         The reshaped CSV in nf-core layout. One row per Sample_ID,
         columns: sample,fastq_1,fastq_2[,strandedness]. Multiple lanes
-        are comma-joined into a single cell.
+        are RFC-4180 quoted and comma-joined into a single cell.
         Structure: [ path(*.nfcore.csv) ]
       pattern: "*.nfcore.csv"
+  - samples:
+      type: tuple
+      description: |
+        Structured per-sample records, built by parsing the csv emit
+        through the lib's canonical ReshapedCsvParser. Each tuple is
+        [ meta, fastq_1, fastq_2 ] where:
+        - meta: [id: 'sample_id', single_end: true|false]
+        - fastq_1: [File, ...]  (R1 fastq paths, possibly multiple lanes)
+        - fastq_2: [File, ...]  (R2 fastq paths; empty for single-end)
+
+        This is the canonical hand-off shape for downstream nf-core
+        modules. A typical consumer is three lines:
+          RESHAPE_SAMPLESHEET.out.samples
+              .map { meta, fq1, fq2 -> [meta, fq1 + fq2] }
+              .set { ch_input }
+          FASTQC(ch_input)   // or any (meta, reads) consumer
+
+        Structure: [ [meta: map, fastq_1: [path], fastq_2: [path]] ]
   - versions:
       type: file
       description: |
