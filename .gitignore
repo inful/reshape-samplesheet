@@ -16,3 +16,16 @@ nextflow-*
 .nf-test/
 .nf-test.log
 nf-test
+# POC scaffolding: lib/ is a copy of the repo-root lib/ (so the
+# sub-workflow can find SamplesheetReshape on the classpath when
+# run from a sub-directory), and nf-core-modules/ is a git clone
+# of https://github.com/nf-core/modules pinned to a specific SHA.
+# Both are populated by examples/poc/bin/setup.sh and are
+# reproducible from scratch, so they don't belong in version
+# control.
+examples/poc/lib/
+examples/poc/nf-core-modules/
+# Smoke-test output: the POC's end-to-end run writes merged
+# fastq.gz here via CAT_FASTQ. Ignored to keep the working tree
+# clean between runs.
+results-poc/

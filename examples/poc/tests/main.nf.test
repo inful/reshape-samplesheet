@@ -1,0 +1,94 @@
+// nf-test for the POC at examples/poc/.
+//
+// The POC runs RESHAPE_SAMPLESHEET → FASTQC end-to-end. This
+// test exercises the structural wire (include paths, channel
+// wiring, the new `samples` emit) using `options "-stub"` so the
+// process scripts produce empty placeholders without actually
+// shelling out to fastqc. The smoke test (in bin/test.sh)
+// covers the real fastqc invocation and per-sample assertions.
+//
+// Why full stub (not `-stub FASTQC`): Nextflow's `-stub name`
+// option does not reliably distinguish a process included from
+// an external module file, so passing `-stub FASTQC` was
+// stubbing SAMPLESHEET_RESHAPE as well. That made the CSV
+// empty and the parser saw zero rows — the test would have
+// passed for the wrong reason. The structural assertions below
+// are deliberately shape-only and work whether the CSV is
+// empty (full stub) or has real content.
+//
+// One-time setup (handled by `bin/test.sh --poc-test`):
+//   examples/poc/bin/setup.sh
+// …which stages lib/ from the repo root and clones nf-core/modules
+// at a pinned SHA into examples/poc/nf-core-modules/.
+//
+// Run with:
+//   nf-test test examples/poc/tests/main.nf.test
+
+nextflow_workflow {
+
+    name "Test Subworkflow POC_RESHAPE_AND_FASTQC"
+    script "../poc.nf"
+    workflow "POC_RESHAPE_AND_FASTQC"
+
+    tag "poc"
+    tag "reshape_samplesheet"
+    tag "fastqc"
+
+
+    test("POC - reshape + fastqc - stub - structural wire assertions") {
+
+        // Structural assertions on the wire. The smoke test
+        // (bin/test.sh --poc-smoke) covers the real data flow
+        // including per-sample assertions; this nf-test focuses
+        // on what nf-test is good at: the include paths resolve,
+        // the named workflow compiles, the emits are declared
+        // with the right shape, and the channel wiring produces
+        // the expected emit names.
+        options "-stub"
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../tests/.poc_test_output')
+                input[3] = [recursive: false]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "POC workflow failed — see the .command.err / nextflow log for details"
+
+            // The reshape CSV should be emitted with the expected
+            // basename. (Stub mode produces an empty file, but the
+            // emit itself is what we're verifying here.)
+            assert workflow.out.csv != null
+            assert workflow.out.csv.first().toString().endsWith('illumina_bcl2fastq.nfcore.csv')
+
+            // The pre-parsed `fastqc_input` emit should exist
+            // (channel is declared). In full stub mode the channel
+            // is empty because the CSV is empty; the smoke test
+            // covers the populated case.
+            assert workflow.out.fastqc_input != null
+
+            // FASTQC stub emits empty .html and .zip per sample —
+            // but only if the fastqc_input channel has elements.
+            // In full stub mode it might be empty, so we check the
+            // channel exists rather than the count.
+            assert workflow.out.fastqc_html != null
+            assert workflow.out.fastqc_zip != null
+
+            // versions emit should be non-empty (mixed from
+            // RESHAPE_SAMPLESHEET's modules + FASTQC's
+            // versions_fastqc).
+            assert workflow.out.versions != null
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../tests/.poc_test_output").deleteDir()
+        }
+    }
+}

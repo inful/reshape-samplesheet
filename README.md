@@ -95,6 +95,12 @@ nextflow run main.nf \
 
 ## Using the sub-workflow from your own pipeline
 
+The sub-workflow emits two views of the same data: a `csv` channel
+(the canonical artifact, good for inspection and external tools)
+and a `samples` channel (a pre-parsed channel of `[meta, fastq_1,
+fastq_2]` tuples — the "three lines to a real analysis module"
+hand-off). Pick whichever fits your consumer.
+
 ```groovy
 include { RESHAPE_SAMPLESHEET } from './subworkflows/nf-core/reshape_samplesheet/main.nf'
 
@@ -102,10 +108,64 @@ workflow {
     RESHAPE_SAMPLESHEET(
         file(params.illumina_samplesheet),
         file(params.fastq_dir),
-        file(params.outdir)
+        file(params.outdir),
+        [recursive: false]
     )
+
+    // Option A: use the CSV as a file artifact (e.g. for an
+    // external tool that consumes a samplesheet, or for human
+    // inspection).
     RESHAPE_SAMPLESHEET.out.csv.view { csv -> println "Reshaped CSV: ${csv}" }
+
+    // Option B: use the pre-parsed `samples` emit to feed a
+    // downstream nf-core module — three lines, no inline parser.
+    RESHAPE_SAMPLESHEET.out.samples
+        .map { meta, fq1, fq2 -> [meta, fq1 + fq2] }
+        .set { ch_fastqc_input }
+    // FASTQC(ch_fastqc_input)   // or any (meta, reads) consumer
 }
+```
+
+## POC: feed the reshaped samplesheet into nf-core/fastqc
+
+`examples/poc/` is a self-contained proof-of-concept that takes
+the next step: it reads the CSV `RESHAPE_SAMPLESHEET` emits and
+feeds it straight into [`nf-core/fastqc`](https://github.com/nf-core/modules/tree/master/modules/nf-core/fastqc)
+to produce per-sample QC reports — including the multi-lane
+`sample_A`, which produces 4 reports (2 R1 lanes + 2 R2 lanes).
+
+The shape that makes this useful is the **new `samples` emit**
+on `RESHAPE_SAMPLESHEET`: a channel of `[meta, fastq_1, fastq_2]`
+tuples, built by parsing the CSV through the lib's
+`ReshapedCsvParser`. The POC's consumer code is **three lines**:
+
+```groovy
+RESHAPE_SAMPLESHEET.out.samples
+    .map { meta, fq1, fq2 -> [meta, fq1 + fq2] }
+    .set { ch_fastqc_input }
+FASTQC(ch_fastqc_input)
+```
+
+No inline parser, no RFC-4180 handling, no file matching — the
+sub-workflow already did that and exposes ready-to-use tuples.
+The POC has its own [nf-test, parser unit tests, and smoke
+test](examples/poc/README.md), and includes the one-time
+`setup.sh` that clones `nf-core/modules` at a pinned SHA.
+
+```bash
+# One-time setup (stages lib/ + clones nf-core/modules@<pinned SHA>)
+examples/poc/bin/setup.sh
+
+# Run the POC end-to-end (uses Docker to run fastqc)
+nextflow run examples/poc/main.nf \
+    --samplesheet tests/data/illumina_bcl2fastq.csv \
+    --fastq_dir   tests/fastqs \
+    --outdir      results-poc \
+    --recursive    false
+
+# Or, run the test stack
+bin/test.sh --poc-smoke    # end-to-end: real fastqc against the test fixtures
+bin/test.sh --poc-test     # full stack: nf-test (stub) + the real fastqc smoke
 ```
 
 The sub-workflow takes four arguments:

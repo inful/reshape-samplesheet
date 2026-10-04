@@ -246,3 +246,21 @@ jobs:
 
       - name: Run Nextflow smoke test
         run: bin/test.sh --smoke
+
+      # POC smoke test (real fastqc against the test fixtures).
+      # Skipped if the one-time setup hasn't been run on this
+      # runner (i.e. examples/poc/nf-core-modules/ is absent). The
+      # setup clones nf-core/modules@<pinned SHA> into the
+      # workspace; ~150 MB. We don't run it in CI by default to
+      # keep CI lean, but it's a one-liner if a contributor
+      # wants to verify the POC works end-to-end on a PR.
+      #
+      # To enable the POC smoke in CI on a given PR, a
+      # contributor would run `examples/poc/bin/setup.sh` once
+      # on the runner (e.g. as a CI step) and the `hashFiles(...)`
+      # guard below will then let this step execute. The smoke
+      # also needs Docker available on the runner; on GitHub-hosted
+      # ubuntu-latest runners Docker is preinstalled.
+      - name: Run POC smoke test (skipped if examples/poc isn't set up)
+        if: hashFiles('examples/poc/nf-core-modules/modules/nf-core/fastqc/main.nf') != ''
+        run: bin/test.sh --poc-smoke

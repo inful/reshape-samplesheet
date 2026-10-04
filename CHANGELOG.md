@@ -5,6 +5,74 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **New `out.samples` emit on `RESHAPE_SAMPLESHEET`** — a pre-parsed
+  channel of `[meta: [id, single_end], fastq_1: [Path, ...],
+  fastq_2: [Path, ...]]` tuples, built by parsing the emitted CSV
+  through the lib's canonical `ReshapedCsvParser`. This is the
+  "three lines to a real nf-core analysis module" hand-off: a
+  consumer goes from the CSV emit to a downstream module with
+  no inline parser and no RFC-4180 handling. The CSV emit stays
+  for human inspection and external tools; the new `samples`
+  emit is the programmatic hand-off. See the updated
+  `subworkflows/nf-core/reshape_samplesheet/meta.yml` for the
+  contract.
+- **New `ReshapedCsvParser` class in the main lib**
+  (`lib/ReshapedCsvParser.groovy`) and public API on
+  `SamplesheetReshape.parseReshapedCsv(file)`. RFC-4180-aware
+  parser that reads the lib's own output CSV and returns
+  structured records. 11 unit tests in
+  `tests/test_reshaped_csv_parser.groovy` cover happy path,
+  quoted multi-value cells, edge cases (UTF-8 BOM, CRLF,
+  escaped quotes), and malformed input. End-to-end test asserts
+  the parser round-trips a CSV produced by the lib itself.
+- **POC: reshape-samplesheet → nf-core/fastqc** at `examples/poc/`.
+  A self-contained proof of concept that takes the next step
+  beyond emitting the CSV: it reads `RESHAPE_SAMPLESHEET.out.samples`
+  and hands the tuples to `nf-core/fastqc` to produce per-sample
+  QC reports — including the multi-lane `sample_A`, which
+  produces 4 reports (2 R1 lanes + 2 R2 lanes). The consumer
+  code in the POC's named sub-workflow is the canonical
+  three-line pattern; see `examples/poc/README.md` for the
+  full architecture, caveats, and test layers. The POC has its
+  own `bin/setup.sh` (clones `nf-core/modules@<pinned SHA>`,
+  stages `lib/` from the repo root) and runs end-to-end via
+  Docker (the FastQC container is pulled on first run; pass
+  `docker.enabled = false` to use a local `fastqc` instead).
+- New `bin/test.sh --poc-smoke` and `bin/test.sh --poc-test`
+  modes. `--poc-smoke` runs the real FastQC against the test
+  fixtures and asserts all 4 samples (including the multi-lane
+  `sample_A`) have non-empty HTML reports. `--poc-test` adds
+  the structural nf-test in stub mode. The `auto` mode also
+  runs `--poc-smoke` if `examples/poc/bin/setup.sh` has been
+  executed.
+- New nf-test case `bcl2fastq - samples emit - structural
+  assertions on (meta, fastq_1, fastq_2) tuples` in
+  `subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test`
+  that asserts the new emit's shape (one tuple per sample,
+  single-end detection, multi-lane file lists).
+- New CI step `Run POC smoke test` in
+  `.github/workflows/ci.yml` that runs the real FastQC against
+  the test fixtures. Skipped if
+  `examples/poc/nf-core-modules/modules/nf-core/fastqc/main.nf`
+  is absent (i.e. the one-time setup hasn't been run on the
+  CI runner).
+
+### Fixed
+- **`SamplesheetReshaper` now RFC-4180-quotes multi-value cells.**
+  Previously, the reshape lib wrote multi-value cells (multiple
+  fastq paths joined by `,`) without surrounding double quotes,
+  which made the resulting CSV unparseable by `splitCsv(header: true)`
+  and any other standards-compliant CSV reader. The README's
+  "per nf-core convention" claim was misleading — the actual
+  convention is quoted multi-value cells (matching rnaseq, sarek,
+  ampliseq, etc.). The lib now wraps any cell containing `,` in
+  double quotes; single-value cells are left unquoted. Existing
+  unit tests still pass; a new unit test asserts the quoting
+  behaviour on both multi-lane and single-lane samples.
+
 ## [0.2.1] - 2026-10-03
 
 ### Added
