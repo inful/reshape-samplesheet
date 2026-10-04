@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **BCLConvert (V2) samplesheet format support.** The parser
+  now auto-detects BCLConvert V2 sheets (with `[BCLConvert_Data]`
+  or `[Cloud_Data]` sections) in addition to bcl2fastq V1 (with
+  `[Data]`) and LRM (no section markers). V2 takes precedence
+  over V1 if both are present (a malformed file would have
+  both, but the V2 data section is the one BCLConvert reads).
+  V2-specific sections like `[Header]` (FileFormatVersion,
+  RunName) and `[BCLConvert_Settings]` (SoftwareVersion,
+  OverrideCycles) are recognised for auto-detection but not used
+  by the reshape use case — they don't leak into sample records.
+  The bcl2fastq structural validator (Sample_ID uniqueness, I7/I5
+  format, length consistency, I7+I5 uniqueness, Hamming distance)
+  works unchanged on V2 records because the per-sample structure
+  is identical to V1. New fixture `tests/data/illumina_bclconvert_v2.csv`
+  with 4 samples in the NovaSeq X series layout; 5 new unit
+  tests in `tests/test_parser.groovy` cover V2 happy path,
+  section-silencing, `[Cloud_Data]` alternative, validator
+  compatibility, and the end-to-end reshape round-trip. Total
+  unit tests: 103 (was 98).
 - **Hamming distance check in the bcl2fastq validator.** For
   every pair of indices in the same column (I7 and I5), the
   validator now flags any pair whose Hamming distance is below
@@ -21,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/test_validator.groovy` cover I7, I5, identical-pair
   de-duplication, unequal-length handling, empty-cell handling,
   lowercase normalisation, and the just-above-the-limit pass
-  case. Total unit tests: 98 (was 91).
+  case.
 - **New `out.samples` emit on `RESHAPE_SAMPLESHEET`** — a pre-parsed
   channel of `[meta: [id, single_end], fastq_1: [Path, ...],
   fastq_2: [Path, ...]]` tuples, built by parsing the emitted CSV

@@ -40,6 +40,89 @@ runner.test('LRM: parses headerless section format', {
     assert samples[2].SampleType == 'DNA'
 })
 
+runner.test('BCLConvert V2: extracts 4 samples from [BCLConvert_Data] section', {
+    def samples = SamplesheetReshape.parseSamplesheet(
+        new File(dataDir, 'illumina_bclconvert_v2.csv')
+    )
+    assert samples.size() == 4, "expected 4 samples, got ${samples.size()}"
+    assert samples[0].Sample_ID == 'sample_A'
+    assert samples[0].index == 'ATCGACGT'
+    assert samples[0].index2 == 'GCTAGCTA'
+})
+
+runner.test('BCLConvert V2: silently ignores [Header] and [BCLConvert_Settings] sections', {
+    // V2 sheets have metadata in [Header] (FileFormatVersion) and
+    // [BCLConvert_Settings] (SoftwareVersion, OverrideCycles).
+    // These are useful for the sequencer but not for the reshape
+    // use case — verify they don't leak into sample records.
+    def samples = SamplesheetReshape.parseSamplesheet(
+        new File(dataDir, 'illumina_bclconvert_v2.csv')
+    )
+    samples.each { sample ->
+        assert !sample.containsKey('FileFormatVersion'),
+            "FileFormatVersion from [Header] should not appear in sample records"
+        assert !sample.containsKey('SoftwareVersion'),
+            "SoftwareVersion from [BCLConvert_Settings] should not appear in sample records"
+        assert !sample.containsKey('OverrideCycles'),
+            "OverrideCycles from [BCLConvert_Settings] should not appear in sample records"
+        assert !sample.containsKey('RunName'),
+            "RunName from [Header] should not appear in sample records"
+    }
+})
+
+runner.test('BCLConvert V2: [Cloud_Data] is accepted as an alternative V2 data section', {
+    // Some cloud-based BCLConvert runs use [Cloud_Data] instead of
+    // [BCLConvert_Data]. Both should be detected as V2.
+    def tmp = File.createTempFile('v2_cloud_data', '.csv')
+    tmp.text = '''[Header]
+FileFormatVersion,2
+
+[BCLConvert_Settings]
+SoftwareVersion,4.2.7
+
+[Cloud_Data]
+Sample_ID,Sample_Name,index,index2
+sample_X,sample_X,ATCGACGT,GCTAGCTA
+'''
+    try {
+        def samples = SamplesheetReshape.parseSamplesheet(tmp)
+        assert samples.size() == 1
+        assert samples[0].Sample_ID == 'sample_X'
+        assert samples[0].index == 'ATCGACGT'
+    } finally { tmp.delete() }
+})
+
+runner.test('BCLConvert V2: works with the bcl2fastq structural validator', {
+    // The validator should run on V2 samplesheets the same as V1.
+    SamplesheetReshape.validateBcl2fastq(
+        new File(dataDir, 'illumina_bclconvert_v2.csv')
+    )
+    // No exception = success
+})
+
+runner.test('BCLConvert V2: end-to-end reshape produces an nf-core CSV with all 4 samples', {
+    // The V2 format must round-trip through the lib's reshape
+    // exactly like V1. This is the load-bearing integration test
+    // for V2 support.
+    def outDir = new File(fastqDir.parentFile, 'v2_test_out')
+    if (outDir.exists()) outDir.deleteDir()
+    outDir.mkdirs()
+    try {
+        def csvFile = SamplesheetReshape.writeReshaped(
+            outDir,
+            new File(dataDir, 'illumina_bclconvert_v2.csv'),
+            fastqDir
+        )
+        def lines = csvFile.text.readLines()
+        assert lines[0] == 'sample,fastq_1,fastq_2',
+            "expected nf-core header, got: ${lines[0]}"
+        // 4 data rows for the 4 samples in the V2 fixture
+        assert lines.size() == 5, "expected 4 data rows + header, got: ${lines.size()}"
+    } finally {
+        outDir.deleteDir()
+    }
+})
+
 runner.test('Quoted fields with commas and escaped quotes parse correctly', {
     def samples = SamplesheetReshape.parseSamplesheet(new File(dataDir, 'illumina_bcl2fastq_quoted.csv'))
     assert samples.size() == 2

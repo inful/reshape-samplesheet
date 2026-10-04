@@ -1,6 +1,7 @@
 /**
- * Internal parser for bcl2fastq and LRM Illumina samplesheets. Not
- * part of the public API; called from {@link SamplesheetReshape}.
+ * Internal parser for bcl2fastq (V1), BCLConvert (V2), and Local Run
+ * Manager Illumina samplesheets. Not part of the public API; called
+ * from {@link SamplesheetReshape}.
  */
 class SamplesheetParser {
 
@@ -17,14 +18,40 @@ class SamplesheetParser {
         }
     }
 
+    // V1 (bcl2fastq / IEM) section markers.
+    private static final Set<String> V1_SECTION_MARKERS =
+        ['[Header]', '[Reads]', '[Manifests]'] as Set
+    private static final String V1_DATA_MARKER = '[Data]'
+
+    // V2 (BCLConvert) section markers. NovaSeq X series and
+    // newer Illumina instruments emit BCLConvert by default. The
+    // cloud-based variant uses [Cloud_Data] instead.
+    private static final Set<String> V2_SECTION_MARKERS =
+        ['[BCLConvert_Settings]', '[FileFormat]', '[RunInfo]'] as Set
+    private static final Set<String> V2_DATA_MARKERS =
+        ['[BCLConvert_Data]', '[Cloud_Data]'] as Set
+    private static final String V2_FILE_FORMAT_VERSION_HEADER = 'FileFormatVersion'
+
     /**
-     * Parse an Illumina samplesheet file. Auto-detects bcl2fastq
-     * (has a [Data] section) vs Local Run Manager (header line at row 0).
+     * Parse an Illumina samplesheet file. Auto-detects the format:
+     * <ul>
+     *   <li><b>V1 (bcl2fastq / IEM)</b> — has a {@code [Data]} section.
+     *       Common on NovaSeq 6000 and earlier Illumina platforms.</li>
+     *   <li><b>V2 (BCLConvert)</b> — has a {@code [BCLConvert_Data]} or
+     *       {@code [Cloud_Data]} section. Common on NovaSeq X series and
+     *       newer Illumina platforms. V2-specific fields like
+     *       {@code [BCLConvert_Settings]} and {@code OverrideCycles} are
+     *       recognised (so a malformed V2 samplesheet fails clearly) but
+     *       are not used by the reshape use case — the per-sample data
+     *       rows have the same structure as V1.</li>
+     *   <li><b>LRM (Local Run Manager)</b> — no section markers; the
+     *       first line is the header and subsequent lines are data rows.</li>
+     * </ul>
      *
      * @param file the samplesheet
      * @return list of sample records as ordered maps
      * @throws IllegalArgumentException if the file is missing, empty,
-     *     structurally malformed (bcl2fastq without [Data], duplicate
+     *     structurally malformed (missing data section, duplicate
      *     header columns, empty header cell, missing Sample_ID column),
      *     or has malformed rows (wrong cell count, empty Sample_ID value)
      */
@@ -53,33 +80,40 @@ class SamplesheetParser {
             )
         }
 
-        // If the file has any bcl2fastq section markers, it must have
-        // a [Data] section too. Without this check, a bcl2fastq file
-        // missing [Data] would silently fall into the LRM path and
+        // V2 takes precedence over V1 if both are present (a malformed
+        // file would have both, but the V2 data section is the one
+        // BCLConvert reads).
+        int v2DataIdx = findSectionIdx(lines, V2_DATA_MARKERS)
+        int v1DataIdx = findSectionIdx(lines, [V1_DATA_MARKER] as Set)
+
+        if (v2DataIdx >= 0) {
+            return parseV2(lines, v2DataIdx, file)
+        }
+
+        // If the file has any bcl2fastq section markers but no
+        // [Data] section, it must have a [Data] section to be
+        // valid — without this check, a bcl2fastq file missing
+        // [Data] would silently fall into the LRM path and
         // produce a confusing header-only (or wrong) output.
-        boolean hasBcl2fastqMarker = lines.any { Line l ->
-            l.content.trim() in ['[Header]', '[Reads]', '[Manifests]']
+        boolean hasV1Marker = lines.any { Line l ->
+            V1_SECTION_MARKERS.contains(l.content.trim())
         }
-        boolean hasDataMarker = lines.any { Line l ->
-            l.content.trim() == '[Data]'
-        }
-        if (hasBcl2fastqMarker && !hasDataMarker) {
+        if (hasV1Marker && v1DataIdx < 0) {
             throw new IllegalArgumentException(
                 "Illumina samplesheet has bcl2fastq section markers but " +
                 "no [Data] section: ${file.absolutePath}"
             )
         }
 
-        int dataIdx = lines.findIndexOf { Line l -> l.content.trim() == '[Data]' }
-        if (dataIdx >= 0) {
-            if (dataIdx + 1 >= lines.size()) {
+        if (v1DataIdx >= 0) {
+            if (v1DataIdx + 1 >= lines.size()) {
                 return []
             }
             return parseTabular(
-                parseCsvLine(lines[dataIdx + 1].content).collect { it.trim() },
-                lines.drop(dataIdx + 2).collect { it.content },
+                parseCsvLine(lines[v1DataIdx + 1].content).collect { it.trim() },
+                lines.drop(v1DataIdx + 2).collect { it.content },
                 '[Data] section',
-                lines[dataIdx + 1].lineNumber,
+                lines[v1DataIdx + 1].lineNumber,
                 file
             )
         }
@@ -88,6 +122,40 @@ class SamplesheetParser {
             lines.drop(1).collect { it.content },
             'header row',
             lines[0].lineNumber,
+            file
+        )
+    }
+
+    /**
+     * Find the first line whose content is one of the given
+     * section markers. Returns -1 if none found.
+     */
+    private static int findSectionIdx(List<Line> lines, Set<String> markers) {
+        return lines.findIndexOf { Line l -> markers.contains(l.content.trim()) }
+    }
+
+    /**
+     * Parse a V2 (BCLConvert) samplesheet. The data section is
+     * structurally identical to V1's [Data] section, so the parsing
+     * is the same — the only difference is the section name and
+     * the presence of [BCLConvert_Settings] / [Header] sections
+     * with V2-specific fields (FileFormatVersion, OverrideCycles,
+     * etc.) that we don't use for the reshape use case.
+     */
+    private static List<Map<String, String>> parseV2(
+        List<Line> lines,
+        int dataIdx,
+        File file
+    ) {
+        String dataMarker = lines[dataIdx].content.trim()
+        if (dataIdx + 1 >= lines.size()) {
+            return []
+        }
+        return parseTabular(
+            parseCsvLine(lines[dataIdx + 1].content).collect { it.trim() },
+            lines.drop(dataIdx + 2).collect { it.content },
+            "${dataMarker} section",
+            lines[dataIdx + 1].lineNumber,
             file
         )
     }
