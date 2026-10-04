@@ -223,6 +223,161 @@ sample_B,sample_B,project,GGCC,TGAA
     } finally { tmp.delete() }
 })
 
+runner.test('validateBcl2fastq throws on I7 indices within default Hamming distance (1 base apart)', {
+    def tmp = File.createTempFile('hamming_i7_close', '.csv')
+    // ATCG and ATCA differ by 1 base. A single sequencing error
+    // on the I7 read could cross-assign sample_B reads to sample_A.
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCAACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for indices within Hamming distance 1"
+    assert msg.contains('Hamming distance'),
+        "expected the error to mention Hamming distance: ${msg}"
+    assert msg.contains('ATCGACGT') && msg.contains('ATCAACGT'),
+        "expected both indices to be named in the error: ${msg}"
+    assert msg.contains('sample_A') && msg.contains('sample_B'),
+        "expected both samples to be named in the error: ${msg}"
+    assert msg.contains('differ by only 1 base'),
+        "expected the error to report the actual distance: ${msg}"
+})
+
+runner.test('validateBcl2fastq accepts I7 indices that differ by exactly minDistance (2) bases', {
+    def tmp = File.createTempFile('hamming_i7_min', '.csv')
+    // ATCGACGT and ATGCATCG differ by 4 bases — well above the
+    // default minimum of 2. Should pass cleanly.
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATGCATCG,GCTAGCTA
+'''
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        assert false, "indices differing by 4 bases should pass: ${e.message}"
+    } finally { tmp.delete() }
+})
+
+runner.test('validateBcl2fastq throws on I5 indices within Hamming distance', {
+    // Same check on the I5 column — different content, same logic.
+    def tmp = File.createTempFile('hamming_i5', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCGACGT,GCAAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for I5 indices within Hamming distance 1"
+    assert msg.contains('I5') && msg.contains('Hamming distance'),
+        "expected the error to mention I5 Hamming distance: ${msg}"
+})
+
+runner.test('validateBcl2fastq does not double-report identical indices via the Hamming check', {
+    // Identical I7s are caught by the I7+I5 combination uniqueness
+    // check, not the Hamming check. The Hamming check should
+    // explicitly skip distance-0 pairs to avoid a duplicate error
+    // for the same problem.
+    def tmp = File.createTempFile('hamming_dup', '.csv')
+    // Same I7 AND same I5 — only the combination check fires.
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCGACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for identical I7+I5"
+    assert msg.contains('Duplicate index combination'),
+        "expected the combination check to fire: ${msg}"
+    // The Hamming check should NOT also fire for this pair (it
+    // would just duplicate the message).
+    assert !msg.contains('Hamming distance'),
+        "Hamming check should skip distance-0 pairs (got: ${msg})"
+})
+
+runner.test('validateBcl2fastq does not throw Hamming errors for unequal-length indices', {
+    // Inconsistent index lengths are caught by the length check,
+    // not the Hamming check. The Hamming check should treat
+    // different-length pairs as "not comparable" rather than
+    // reporting a spurious distance violation.
+    def tmp = File.createTempFile('hamming_diff_len', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCG,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for the length mismatch"
+    assert msg.contains('length') && msg.contains('differs'),
+        "expected the length check to fire: ${msg}"
+    assert !msg.contains('Hamming distance'),
+        "Hamming check should not report a violation for unequal lengths (got: ${msg})"
+})
+
+runner.test('validateBcl2fastq does not throw Hamming errors for empty index cells', {
+    // Empty cells are caught by the empty-index check, not the
+    // Hamming check. The Hamming check should ignore empty cells.
+    def tmp = File.createTempFile('hamming_empty', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for the empty I7"
+    assert msg.contains('I7 (index) value is empty'),
+        "expected the empty-index check to fire: ${msg}"
+    assert !msg.contains('Hamming distance'),
+        "Hamming check should not report a violation involving an empty cell (got: ${msg})"
+})
+
+runner.test('validateBcl2fastq normalises lowercase indices before the Hamming check', {
+    // The character check normalises to uppercase; the Hamming
+    // check should do the same so 'atcg' and 'ATCA' (Hamming
+    // distance 1) get flagged even when written lowercase.
+    def tmp = File.createTempFile('hamming_case', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,atcgacgt,GCTAGCTA
+sample_B,sample_A,atcaacgt,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for lowercase indices within Hamming distance 1"
+    assert msg.contains('Hamming distance') && msg.contains('ATCGACGT') && msg.contains('ATCAACGT'),
+        "expected normalised indices in the error: ${msg}"
+})
+
 // -----------------------------------------------------------------------------
 // validateStructure integration (opt-in bcl2fastq checks through validate/reshape)
 // -----------------------------------------------------------------------------

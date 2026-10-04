@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Hamming distance check in the bcl2fastq validator.** For
+  every pair of indices in the same column (I7 and I5), the
+  validator now flags any pair whose Hamming distance is below
+  the default minimum of 2. Catches demultiplexing risks where a
+  single sequencing error could cross-assign reads to the wrong
+  sample (e.g. `ATCGACGT` and `ATCAACGT` differ by one base).
+  Skips pairs already caught by other checks (identical indices
+  → I7+I5 combination check; empty or unequal-length indices →
+  their respective checks). Default of 2 matches
+  `nf-core/samplesheetparser/validate`. 7 new unit tests in
+  `tests/test_validator.groovy` cover I7, I5, identical-pair
+  de-duplication, unequal-length handling, empty-cell handling,
+  lowercase normalisation, and the just-above-the-limit pass
+  case. Total unit tests: 98 (was 91).
 - **New `out.samples` emit on `RESHAPE_SAMPLESHEET`** — a pre-parsed
   channel of `[meta: [id, single_end], fastq_1: [Path, ...],
   fastq_2: [Path, ...]]` tuples, built by parsing the emitted CSV
