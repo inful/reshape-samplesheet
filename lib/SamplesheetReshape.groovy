@@ -239,4 +239,66 @@ class SamplesheetReshape {
             opts ?: [:]
         )
     }
+
+    // ---- parseReshapedCsv ----
+
+    /**
+     * Parse a reshaped CSV file (the output of {@link #writeReshaped} or
+     * the emit from {@code RESHAPE_SAMPLESHEET.out.csv}) into a list of
+     * structured records. This is the canonical hand-off shape for
+     * downstream nf-core modules — each record carries the per-sample
+     * metadata plus the per-direction list of fastq files, ready to be
+     * re-tupled into a {@code (meta, reads)} pair by the consumer.
+     *
+     * <p>Why this exists: the CSV is the human-readable artifact (good
+     * for inspection, debugging, and tools that consume samplesheets
+     * as files), but every consumer that wants to hand the data to a
+     * downstream nf-core module has to re-parse it. That re-parse
+     * used to be 50 lines of glue per consumer — most of it
+     * RFC-4180 quoting handling, because multi-value cells (e.g.
+     * multiple lanes joined with {@code ,}) must be wrapped in
+     * double quotes for the CSV to be parseable at all. This
+     * function is the canonical implementation: same parser, same
+     * output shape, lib-owned and unit-tested.
+     *
+     * <p>Each returned record is a Map with:
+     * <ul>
+     *   <li>{@code meta} — {@code [id: 'sample_id', single_end: true|false]}.
+     *       {@code single_end} is {@code true} when the sample's
+     *       {@code fastq_2} cell is empty (the standard nf-core
+     *       convention for single-end samples).</li>
+     *   <li>{@code fastq_1} — {@code [File, ...]} of R1 paths. May be
+     *       empty if the CSV has no {@code fastq_1} column (shouldn't
+     *       happen for our emit, but the parser is defensive).</li>
+     *   <li>{@code fastq_2} — {@code [File, ...]} of R2 paths. Empty
+     *       for single-end samples.</li>
+     * </ul>
+     *
+     * <p>Lane ordering: files appear in the CSV in the order produced
+     * by {@link SamplesheetReshaper#reshapeImpl}, which is
+     * filesystem-dependent (uses {@code File.listFiles()}). For the
+     * common bcl2fastq layout ({@code ..._L00{Lane}_R{1,2}_...}) the
+     * order is consistent between R1 and R2 cells. Consumers that
+     * need pairwise correspondence by lane should re-sort by lane
+     * number explicitly before zipping.
+     *
+     * @param csvFile path-like: {@link File}, {@link String}, or
+     *                any {@link java.nio.file.Path}
+     * @return a list of records, one per data row in the CSV. Empty
+     *         list if the file is empty or has only a header.
+     * @throws IllegalArgumentException if the CSV is malformed in a
+     *         way the parser can't recover from (e.g. an unclosed
+     *         quote, a header row that doesn't contain
+     *         {@code sample})
+     */
+    static List<Map<String, Object>> parseReshapedCsv(Object csvFile) {
+        return ReshapedCsvParser.parse(CsvSupport.asFile(csvFile))
+    }
+
+    static List<Map<String, Object>> parseReshapedCsv(Object csvFile, Map opts) {
+        // Reserved for forward-compat opts (e.g. lane sort, error
+        // tolerance). Currently a thin pass-through; the argument is
+        // accepted so adding opts later is non-breaking.
+        return ReshapedCsvParser.parse(CsvSupport.asFile(csvFile))
+    }
 }

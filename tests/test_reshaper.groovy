@@ -43,6 +43,34 @@ runner.test('multi-lane sample aggregates R1 fastqs into a single comma-separate
         "expected both R2 lanes referenced for sample_A, got: ${sampleA}"
 })
 
+runner.test('multi-lane cells are RFC-4180 quoted so CSV consumers can parse them back as one cell', {
+    // Per RFC 4180, a cell containing the separator (`,`) must be
+    // wrapped in double quotes — otherwise Nextflow's `splitCsv(header:
+    // true)` (and most other CSV consumers) miscount the columns and
+    // silently drop the trailing values. The `per nf-core convention`
+    // claim in the README is shorthand for "quoted multi-value cells",
+    // matching rnaseq, sarek, ampliseq, etc.
+    def csv = SamplesheetReshape.reshape(
+        new File(dataDir, 'illumina_bcl2fastq.csv'),
+        fastqDir
+    )
+    def sampleA = csv.readLines().drop(1).find { it.startsWith('sample_A,') }
+    assert sampleA != null, "sample_A row missing"
+    // The fastq_1 and fastq_2 cells (which hold 2 paths each, joined
+    // by `,`) must be wrapped in `"…"`. The sample id cell holds a
+    // single token and is left unquoted.
+    assert sampleA =~ /^sample_A,"[^"]+,[^"]+","[^"]+,[^"]+"$/,
+        "expected sample_A row to have RFC-4180 quoted multi-value cells, got: ${sampleA}"
+    // The converse: a single-lane sample (sample_B) has single-value
+    // cells and must NOT be quoted. Assert the row contains no
+    // quote characters (the column separators are commas between
+    // unquoted cells, not inside quoted cells).
+    def sampleB = csv.readLines().drop(1).find { it.startsWith('sample_B,') }
+    assert sampleB != null, "sample_B row missing"
+    assert !sampleB.contains('"'),
+        "single-value cells should be left unquoted, got: ${sampleB}"
+})
+
 runner.test('single-end sample has empty fastq_2 cell', {
     def csv = SamplesheetReshape.reshape(
         new File(dataDir, 'illumina_bcl2fastq.csv'),

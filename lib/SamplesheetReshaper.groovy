@@ -191,6 +191,22 @@ class SamplesheetReshaper {
     }
 
     private static String joinPaths(List<File> files) {
-        return files.collect { it.absolutePath }.join(',')
+        String joined = files.collect { it.absolutePath }.join(',')
+        // Per RFC 4180, a cell that contains the separator (`,`) must be
+        // wrapped in double quotes so a CSV consumer can parse the cell
+        // back as a single value. Without the quotes, a row with two
+        // R1 lanes and two R2 lanes reads as 5 columns (sample, R1_lane1,
+        // R1_lane2, R2_lane2, R2_lane1) instead of the intended 3, and
+        // Nextflow's `splitCsv(header: true)` silently drops the extras.
+        // Single-file cells are left unquoted for readability.
+        //
+        // This matches the convention used by every nf-core pipeline's
+        // samplesheet (rnaseq, sarek, ampliseq, ...). The previous
+        // unquoted output was the well-known footgun the README's
+        // "per nf-core convention" claim was supposed to avoid.
+        if (joined.contains(',')) {
+            return '"' + joined + '"'
+        }
+        return joined
     }
 }
