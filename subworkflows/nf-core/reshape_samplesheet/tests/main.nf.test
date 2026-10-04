@@ -247,4 +247,68 @@ nextflow_workflow {
             new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
         }
     }
+
+
+    test("BCLConvert V2 - happy path - default opts") {
+
+        // Verifies the end-to-end V2 path through the sub-workflow:
+        // the parser auto-detects BCLConvert V2 from the
+        // [BCLConvert_Data] section marker, the validator runs the
+        // same bcl2fastq structural checks on the V2 records
+        // (because per-sample data structure is identical to V1),
+        // and the reshape produces an nf-core CSV with all 4
+        // samples. The samples emit contains the same shape as the
+        // V1 case.
+        //
+        // This is the load-bearing integration test for V2 support:
+        // it proves the auto-detection + reshape + parse round-trip
+        // works end-to-end.
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bclconvert_v2.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output')
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "BCLConvert V2 sub-workflow failed — see the .command.err / nextflow log for details"
+
+            // The reshape CSV should be emitted with the
+            // samplesheet's basename (not the V2-specific section
+            // name). The end-to-end path produces a standard
+            // nf-core CSV.
+            assert workflow.out.csv != null
+            assert workflow.out.csv.first().toString().endsWith('illumina_bclconvert_v2.nfcore.csv')
+
+            // The samples emit has the same shape as V1: one tuple
+            // per sample, with the same per-sample structure. We
+            // assert count + single-end detection + multi-lane
+            // shape — the same load-bearing invariants as the V1
+            // case.
+            assert workflow.out.samples != null
+            assert workflow.out.samples.size() == 4,
+                "expected 4 V2 sample tuples, got: ${workflow.out.samples.size()}"
+
+            def byId = [:]
+            workflow.out.samples.each { entry -> byId[entry[0].id] = entry }
+            assert byId.keySet() as List == ['sample_A', 'sample_B', 'sample_C', 'sample_D'],
+                "expected exactly the 4 V2 fixture sample IDs, got: ${byId.keySet()}"
+
+            def a = byId['sample_A']
+            assert a[0].single_end == false
+            assert a[1].size() == 2, "sample_A R1 should have 2 lanes, got: ${a[1].size()}"
+            assert a[2].size() == 2, "sample_A R2 should have 2 lanes, got: ${a[2].size()}"
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
 }
