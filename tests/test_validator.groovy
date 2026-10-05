@@ -484,6 +484,76 @@ sample_A,sample_A,GGCTAACC,TGACCGAA
     } finally { tmp.delete() }
 })
 
+runner.test('validate(... [hammingDistanceAsError: true]) threads the opt through to the validator', {
+    // Opt-plumbing test: verify that hammingDistanceAsError in the
+    // opts map reaches the validator when validateStructure is true.
+    // A future refactor that breaks the wiring (e.g., renames the
+    // opt or forgets to thread it through reshapeImpl) would not be
+    // caught by the unit tests for validateBcl2fastq directly, so
+    // this test exercises the public path.
+    def tmp = File.createTempFile('hamming_opt_threading_error', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCAACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validate(tmp, fastqDir,
+            [validateStructure: true, hammingDistanceAsError: true])
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for close indices with the opt-in"
+    assert msg.contains('Hamming distance'),
+        "error should call out the Hamming violation: ${msg}"
+})
+
+runner.test('reshape(... [hammingDistanceAsError: true]) threads the opt through to the validator', {
+    // Same threading check but through the reshape entry point,
+    // since reshape and validate have separate code paths to the
+    // validator.
+    def tmp = File.createTempFile('hamming_opt_reshape_error', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCAACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.reshape(tmp, fastqDir,
+            [validateStructure: true, hammingDistanceAsError: true])
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for close indices with the opt-in"
+    assert msg.contains('Hamming distance'),
+        "error should call out the Hamming violation: ${msg}"
+})
+
+runner.test('validate(... [hammingDistanceAsError unset]) defaults to warning (no exception)', {
+    // The default Hamming behaviour is "warn, don't throw", and
+    // that default should be preserved when the opt is absent.
+    def tmp = File.createTempFile('hamming_opt_threading_warn', '.csv')
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCAACGT,GCTAGCTA
+'''
+    def original = System.err
+    def captured = new ByteArrayOutputStream()
+    System.setErr(new PrintStream(captured))
+    try {
+        SamplesheetReshape.validate(tmp, fastqDir, [validateStructure: true])
+    } finally {
+        System.setErr(original)
+        tmp.delete()
+    }
+    String stderr = captured.toString()
+    assert stderr.contains('WARNING') && stderr.contains('Hamming distance'),
+        "expected a warning on stderr for close indices with the default opt, got: ${stderr}"
+})
+
 // -----------------------------------------------------------------------------
 // fix 6: empty index values are now reported, not silently passed
 // -----------------------------------------------------------------------------

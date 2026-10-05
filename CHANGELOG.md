@@ -30,17 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hamming distance check in the bcl2fastq validator.** For
   every pair of indices in the same column (I7 and I5), the
   validator now flags any pair whose Hamming distance is below
-  the default minimum of 2. Catches demultiplexing risks where a
-  single sequencing error could cross-assign reads to the wrong
-  sample (e.g. `ATCGACGT` and `ATCAACGT` differ by one base).
-  Skips pairs already caught by other checks (identical indices
-  → I7+I5 combination check; empty or unequal-length indices →
-  their respective checks). Default of 2 matches
-  `nf-core/samplesheetparser/validate`. 7 new unit tests in
-  `tests/test_validator.groovy` cover I7, I5, identical-pair
-  de-duplication, unequal-length handling, empty-cell handling,
-  lowercase normalisation, and the just-above-the-limit pass
-  case.
+  2 (the minimum at which a single sequencing error cannot
+  cross-assign reads between two samples). Skips pairs already
+  caught by other checks (identical indices → I7+I5 combination
+  check; empty or unequal-length indices → their respective
+  checks). 7 new unit tests in `tests/test_validator.groovy`
+  cover I7, I5, identical-pair de-duplication, unequal-length
+  handling, empty-cell handling, lowercase normalisation, and
+  the just-above-the-limit pass case.
 
 ### Changed
 - **Hamming distance check is a warning by default, not an

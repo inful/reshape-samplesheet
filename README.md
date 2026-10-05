@@ -193,6 +193,7 @@ The sub-workflow takes four arguments:
 | `strandedness` | String  | `null`  | when non-null, a fourth `strandedness` column is added with this value for every sample. The lib coerces the following to null: `Boolean true`, empty string, the String `"true"`, the String `"false"` — these are all easy CLI footguns (e.g. `--strandedness ''` is collapsed by Nextflow to the String `"true"`) |
 | `pattern`      | String  | `null`  | a regex template for matching fastq filenames to Sample_IDs. The template may reference the Sample_ID as `${sampleId}` (regex-escaped). See the "How samples are matched" section. |
 | `validateStructure` | Boolean | `false` | when `true`, run bcl2fastq structural checks on the samplesheet (Sample_ID uniqueness, non-empty I7/I5 index values, I7/I5 index format, I7/I5 length consistency across samples, I7+I5 index uniqueness) in addition to the per-sample fastq checks. Useful for a combined pre-flight that validates everything in one pass. See the "Pre-bcl2fastq validation" section. |
+| `hammingDistanceAsError` | Boolean | `false` | only meaningful when `validateStructure: true`. Controls whether Hamming-distance index violations (two indices in the same column differing by fewer than 2 bases) are reported as errors (thrown) or warnings (printed to `System.err`, the pipeline continues). A Hamming distance of 1 is a soft risk that bcl2fastq may or may not handle depending on the configured mismatch tolerance, and some NovaSeq X series UMI-style demultiplexing workflows deliberately use close indices, so the warning default is deliberate. Set to `true` for production runs where every close-index pair is worth investigating. |
 
 Unknown keys in `opts` are silently ignored. Pass `null` (or `[:]`) for all defaults.
 
@@ -317,6 +318,7 @@ message so you can find the offending file in a batch.
 | I7/I5 index with invalid characters (bcl2fastq check) | `IllegalArgumentException` showing the bad index sequence; lowercase is normalised to uppercase |
 | I7 or I5 length inconsistent across samples (bcl2fastq check) | `IllegalArgumentException` naming the offending sample — bcl2fastq requires consistent lengths in a run |
 | Duplicate I7+I5 combination (bcl2fastq check) | `IllegalArgumentException` listing all colliding samples — demultiplexing-critical |
+| I7 or I5 indices with Hamming distance < 2 (bcl2fastq check) | by default, `WARNING:` printed to `System.err`; with `validateStructure: true, hammingDistanceAsError: true` in the opts, `IllegalArgumentException` listing all collisions |
 | `fastq_dir` missing or not a directory | `IllegalArgumentException` with the path |
 | `fastq_dir` contains no `.fastq`/`.fq(.gz)` files | `IllegalArgumentException` with the path |
 | Sample in the samplesheet has no matching fastq files | `IllegalArgumentException` listing **all** such samples in one error so the user sees the complete list, not just the first |
@@ -375,10 +377,19 @@ when you don't have any FASTQ files yet — call
 - **I7+I5 combination uniqueness** — two samples on the same lane
   with the same I7 AND the same I5 cannot be demultiplexed; the
   error lists every colliding sample so you can fix them in one pass
+- **I7 and I5 Hamming distance ≥ 2** — every pair of indices in
+  the same column (I7 and I5 separately) must differ by at least
+  2 bases. Catches demultiplexing risks where one sequencing
+  error could cross-assign reads to the wrong sample. **Default
+  behaviour is a warning** (printed to `System.err`, the pipeline
+  continues) — see the `hammingDistanceAsError` opt below.
 
 ```groovy
 // Just the samplesheet, no FASTQ files needed
 SamplesheetReshape.validateBcl2fastq(samplesheet)
+
+// Promote Hamming violations to errors (default: warn)
+SamplesheetReshape.validateBcl2fastq(samplesheet, [hammingDistanceAsError: true])
 ```
 
 Run this check before a 24-hour sequencing run, so problems

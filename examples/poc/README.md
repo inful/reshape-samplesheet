@@ -183,11 +183,17 @@ FastQC invocation and per-sample reports).
   input file's basename and adds an index suffix when there are
   multiple inputs. The smoke test accounts for this (`${s}_*_fastqc.html`).
 - **No `samplesheetparser/validate` dependency**: by design. The
-  POC relies on the lib's built-in `validate()` and `validateBcl2fastq()`
-  for validation. A future enhancement could add Hamming distance
-  checks and BCLConvert (V2) format support to bring coverage
-  to parity with `samplesheetparser/validate` without taking
-  on the Python dependency.
+  POC relies on the lib's built-in `validate()` and
+  `validateBcl2fastq()` for validation. The lib has full
+  coverage of what `samplesheetparser/validate` covers for
+  *V1/V2 bcl2fastq parsing* (Sample_ID uniqueness, I7/I5 format
+  and length, I7+I5 uniqueness, Hamming distance), without
+  taking on the Python dependency. Still-missing from the
+  lib (and therefore from this POC): adapter sequence
+  detection, bidirectional V1↔V2 conversion, and
+  OverrideCyles parsing for UMI extraction. None of these
+  are needed for the reshape use case (Sample_ID → fastq
+  files), so they're out of scope.
 - **Single module today**: this POC includes only `nf-core/fastqc`.
   Adding another downstream module (e.g. `nf-core/fastp`,
   `nf-core/cat`) is a matter of adding the include to `poc.nf`
