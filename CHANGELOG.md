@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-05
+
+### Fixed
+- **Reshape script no longer wipes the whole `output_dir`.** The
+  `SAMPLESHEET_RESHAPE` script's `rm -rf "${output_dir}"` was
+  removing any other files the user had placed in the output
+  directory (logs, a summary report, a different CSV from a
+  parallel run) on every reshape. The script now only removes
+  the specific CSV it's about to regenerate, and only clears a
+  pre-existing path at `output_dir` if it isn't already a
+  directory (the test-fixture case where Nextflow's
+  `checkIfExists: false` stages a symlink to a non-existent
+  target). A new nf-test case
+  (`reshape preserves sibling files in output_dir`) pre-creates
+  a sentinel file in the output directory and asserts it
+  survives the reshape — a future regression to `rm -rf` would
+  fail this test.
+
 ## [0.3.0] - 2026-10-05
 
 ### Added
