@@ -39,12 +39,34 @@ process SAMPLESHEET_RESHAPE {
         [ -f "\$f" ] && cp "\$f" lib/
     done
 
-    # Make sure the output directory exists. When output_dir is
-    # declared checkIfExists: false in the nf-test, Nextflow creates
-    # it as an EMPTY FILE placeholder (not a directory). Force-create
-    # a real directory here so the Groovy file write below can succeed.
-    rm -rf '${output_dir_str}'
-    mkdir -p '${output_dir_str}'
+    # Make sure output_dir is a writable directory. Three cases:
+    #   1. output_dir doesn't exist yet — mkdir -p creates it.
+    #   2. output_dir is a regular file, a symlink (incl. broken
+    #      symlinks to a non-existent target, which is what Nextflow
+    #      creates with checkIfExists: false), or any other non-dir
+    #      — we need to clear it so mkdir can create a real directory.
+    #   3. output_dir is already a directory — leave its contents
+    #      alone. Anything the user has put there (logs, reports,
+    #      a different CSV from a parallel run) stays untouched.
+    #
+    # `-d` follows symlinks, so a symlink to a directory is treated
+    # as a directory (case 3, correct). A symlink to a non-existent
+    # path is treated as not-a-directory (case 2, correct — we'd
+    # otherwise fail at mkdir).
+    #
+    # The `rm -f ${output_dir_str}` is intentional but not `rm -rf`:
+    # a destructive wipe of the whole output_dir would surprise users
+    # who have other files alongside the CSV. We only clear whatever
+    # pre-existing path is in the way of the directory, then leave
+    # case 3 (real existing directory) alone.
+    if [ ! -d '${output_dir_str}' ]; then
+        rm -f '${output_dir_str}'
+        mkdir -p '${output_dir_str}'
+    fi
+    # Remove just the specific CSV we're about to regenerate, not
+    # the whole directory — leaves any other files the user has put
+    # there alone.
+    rm -f '${output_dir_str}/${basename}.nfcore.csv'
 
     # Write the Groovy entry point to a file and run it.
     cat > reshape.groovy << 'GROOVY'

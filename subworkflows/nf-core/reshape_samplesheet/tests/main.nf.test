@@ -311,4 +311,71 @@ nextflow_workflow {
             new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
         }
     }
+
+
+    test("reshape preserves sibling files in output_dir (no destructive rm -rf)") {
+
+        // Pre-populate the output_dir with a sentinel file that the
+        // reshape should leave alone. The script's `rm` only targets
+        // the specific CSV the lib is about to regenerate, so any
+        // other file the user has put in output_dir (a log, a report,
+        // a different CSV from a parallel run) should be preserved
+        // across the reshape. A future refactor that re-introduces
+        // `rm -rf` on output_dir would fail this test by deleting the
+        // sentinel.
+        when {
+            params { }
+            workflow {
+                """
+                // Pre-populate the output_dir with a sentinel file before
+                // the process sees it. The script's rm only targets the
+                // specific CSV it's about to regenerate, so the sentinel
+                // should still be there after the reshape.
+                // Pre-populate the output_dir with a sentinel file before
+                // the process sees it. The script's rm only targets the
+                // specific CSV it's about to regenerate, so the sentinel
+                // should still be there after the reshape. The path is
+                // given as an absolute path so file() doesn't have to
+                // resolve it through any projectDir interpolation.
+                def outDirPath = file("\${projectDir}/../../../../tests/.nfcore_test_output")
+                outDirPath.toFile().mkdirs()
+                new File(outDirPath.toFile(), 'sentinel.log').text = 'do not delete'
+
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = outDirPath
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "reshape failed — see the .command.err / nextflow log for details"
+
+            // The CSV should be emitted (the lib's job).
+            assert workflow.out.csv != null
+            assert workflow.out.csv.first().toString().endsWith('illumina_bcl2fastq.nfcore.csv')
+
+            // The sentinel must still be in output_dir. If the
+            // script had used `rm -rf` on output_dir, this assertion
+            // would fail. The CSV is emitted to the workdir (as a
+            // basename), and the workdir has a `.nfcore_test_output`
+            // symlink pointing to the original output_dir. Resolve
+            // that symlink to find the sentinel.
+            def csvPath = new File(workflow.out.csv.first().toString())
+            def outDirSymlink = new File(csvPath.parentFile, '.nfcore_test_output')
+            def outDir = outDirSymlink.toPath().toRealPath().toFile()
+            def sentinel = new File(outDir, 'sentinel.log')
+            assert sentinel.exists(),
+                "sentinel.log was deleted by the reshape — script is using rm -rf instead of targeted rm. " +
+                "outDir absolute path: ${outDir.absolutePath}, csv path: ${csvPath.absolutePath}"
+            assert sentinel.text == 'do not delete',
+                "sentinel content was changed: ${sentinel.text}"
+        }
+
+        cleanup {
+            new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
+        }
+    }
 }
