@@ -5,32 +5,20 @@
  */
 class SamplesheetParser {
 
-    /**
-     * One logical line of the samplesheet, paired with its 1-based
-     * source line number for use in error messages and warnings.
-     */
-    static class Line {
-        final String content
-        final int lineNumber
-        Line(String content, int lineNumber) {
-            this.content = content
-            this.lineNumber = lineNumber
-        }
-    }
-
     // V1 (bcl2fastq / IEM) section markers.
     private static final Set<String> V1_SECTION_MARKERS =
         ['[Header]', '[Reads]', '[Manifests]'] as Set
     private static final String V1_DATA_MARKER = '[Data]'
 
-    // V2 (BCLConvert) section markers. NovaSeq X series and
-    // newer Illumina instruments emit BCLConvert by default. The
-    // cloud-based variant uses [Cloud_Data] instead.
-    private static final Set<String> V2_SECTION_MARKERS =
-        ['[BCLConvert_Settings]', '[FileFormat]', '[RunInfo]'] as Set
+    // V2 (BCLConvert) data-section markers. NovaSeq X series and
+    // newer Illumina platforms emit BCLConvert by default; the
+    // cloud-based variant uses [Cloud_Data] instead of
+    // [BCLConvert_Data]. Format detection is based on these markers
+    // alone — V2-specific config sections like [BCLConvert_Settings]
+    // and the FileFormatVersion header field are recognised for
+    // forward-compat but are not used by the reshape use case.
     private static final Set<String> V2_DATA_MARKERS =
         ['[BCLConvert_Data]', '[Cloud_Data]'] as Set
-    private static final String V2_FILE_FORMAT_VERSION_HEADER = 'FileFormatVersion'
 
     /**
      * Parse an Illumina samplesheet file. Auto-detects the format:
@@ -72,8 +60,8 @@ class SamplesheetParser {
         // Split into logical lines, respecting newlines inside quoted
         // CSV fields. The current line's 1-based source line number is
         // preserved for use in error messages and warnings.
-        List<Line> allLines = splitLogicalLines(text)
-        List<Line> lines = allLines.findAll { !it.content.trim().isEmpty() }
+        List<CsvLine> allLines = CsvLines.splitLogicalLines(text)
+        List<CsvLine> lines = allLines.findAll { !it.content.trim().isEmpty() }
         if (lines.isEmpty()) {
             throw new IllegalArgumentException(
                 "Illumina samplesheet is empty: ${file.absolutePath}"
@@ -90,12 +78,12 @@ class SamplesheetParser {
             return parseV2(lines, v2DataIdx, file)
         }
 
-        // If the file has any bcl2fastq section markers but no
-        // [Data] section, it must have a [Data] section to be
-        // valid — without this check, a bcl2fastq file missing
-        // [Data] would silently fall into the LRM path and
-        // produce a confusing header-only (or wrong) output.
-        boolean hasV1Marker = lines.any { Line l ->
+        // If the file has any bcl2fastq markers but no [Data]
+        // section, it must have a [Data] section to be valid —
+        // without this check, a bcl2fastq file missing [Data]
+        // would silently fall into the LRM path and produce a
+        // confusing header-only (or wrong) output.
+        boolean hasV1Marker = lines.any { CsvLine l ->
             V1_SECTION_MARKERS.contains(l.content.trim())
         }
         if (hasV1Marker && v1DataIdx < 0) {
@@ -130,8 +118,8 @@ class SamplesheetParser {
      * Find the first line whose content is one of the given
      * section markers. Returns -1 if none found.
      */
-    private static int findSectionIdx(List<Line> lines, Set<String> markers) {
-        return lines.findIndexOf { Line l -> markers.contains(l.content.trim()) }
+    private static int findSectionIdx(List<CsvLine> lines, Set<String> markers) {
+        return lines.findIndexOf { CsvLine l -> markers.contains(l.content.trim()) }
     }
 
     /**
@@ -143,7 +131,7 @@ class SamplesheetParser {
      * etc.) that we don't use for the reshape use case.
      */
     private static List<Map<String, String>> parseV2(
-        List<Line> lines,
+        List<CsvLine> lines,
         int dataIdx,
         File file
     ) {
@@ -241,53 +229,6 @@ class SamplesheetParser {
             )
         }
         return records
-    }
-
-    /**
-     * Split the file content into logical lines, respecting newlines
-     * inside double-quoted CSV fields. Returns each line paired with
-     * its 1-based source line number so error messages can point to
-     * the right place.
-     */
-    private static List<Line> splitLogicalLines(String text) {
-        List<Line> result = []
-        StringBuilder current = new StringBuilder()
-        int currentLine = 1
-        int startLine = 1
-        boolean inQuotes = false
-        int i = 0
-        while (i < text.length()) {
-            char c = text.charAt(i)
-            if (c == '"') {
-                inQuotes = !inQuotes
-                current.append(c)
-                i++
-            } else if (!inQuotes && c == '\n') {
-                result << new Line(current.toString(), startLine)
-                current = new StringBuilder()
-                currentLine++
-                startLine = currentLine
-                i++
-            } else if (!inQuotes && c == '\r') {
-                result << new Line(current.toString(), startLine)
-                current = new StringBuilder()
-                // Swallow the LF half of a CRLF if present
-                if (i + 1 < text.length() && text.charAt(i + 1) == '\n') {
-                    i += 2
-                } else {
-                    i++
-                }
-                currentLine++
-                startLine = currentLine
-            } else {
-                current.append(c)
-                i++
-            }
-        }
-        if (current.length() > 0) {
-            result << new Line(current.toString(), startLine)
-        }
-        return result
     }
 
     /**

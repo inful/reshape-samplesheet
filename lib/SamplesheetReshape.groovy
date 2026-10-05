@@ -1,8 +1,16 @@
 /**
- * Parses an Illumina samplesheet (bcl2fastq or Local Run Manager format)
- * and reshapes it into the generic nf-core samplesheet layout:
+ * Parses an Illumina samplesheet and reshapes it into the generic
+ * nf-core samplesheet layout:
  *
  *     sample,fastq_1,fastq_2
+ *
+ * Three input formats are auto-detected:
+ *  - <b>bcl2fastq (V1, IEM)</b> — has a {@code [Data]} section
+ *    (NovaSeq 6000 and earlier Illumina platforms)
+ *  - <b>BCLConvert (V2)</b> — has a {@code [BCLConvert_Data]} or
+ *    {@code [Cloud_Data]} section (NovaSeq X series and newer)
+ *  - <b>Local Run Manager (LRM)</b> — no section markers, the first
+ *    line is the header and subsequent lines are data rows
  *
  * Fastq files are discovered by matching the Sample_ID against filenames
  * in a fastq directory. Multiple R1/R2 files for one sample (e.g. across
@@ -13,7 +21,8 @@
  *
  * <h2>Error contract</h2>
  * The class throws {@link IllegalArgumentException} for malformed input:
- * missing file, empty file, bcl2fastq with no {@code [Data]} section,
+ * missing file, empty file, missing data section (no {@code [Data]} for
+ * V1, no {@code [BCLConvert_Data]} or {@code [Cloud_Data]} for V2),
  * duplicate header columns, missing required columns, samples with no
  * matching fastq files, etc. All detected issues for a given samplesheet
  * are collected and reported in a single exception so the user sees the
@@ -28,8 +37,9 @@
  * <h2>Implementation layout</h2>
  * This class is a thin facade. The actual logic lives in
  * {@link SamplesheetParser}, {@link SamplesheetReshaper},
- * {@link SamplesheetValidator}, and {@link CsvSupport}. All four are
- * auto-loaded by Nextflow from the {@code lib/} directory.
+ * {@link SamplesheetValidator}, {@link CsvSupport}, and
+ * {@link CsvLines}. All five are auto-loaded by Nextflow from the
+ * {@code lib/} directory.
  *
  * @author Jone Marius Vignes
  * @since 0.1.0
@@ -39,9 +49,11 @@ class SamplesheetReshape {
     // ---- parseSamplesheet ----
 
     /**
-     * Parse an Illumina samplesheet file.
-     * Auto-detects bcl2fastq (has a [Data] section) vs Local Run Manager
-     * (header line at row 0).
+     * Parse an Illumina samplesheet file. Auto-detects the format:
+     * bcl2fastq (V1, has a {@code [Data]} section), BCLConvert (V2,
+     * has a {@code [BCLConvert_Data]} or {@code [Cloud_Data]} section),
+     * or Local Run Manager (no section markers, first line is the
+     * header).
      */
     static List<Map<String, String>> parseSamplesheet(File file) {
         return SamplesheetParser.parseSamplesheetImpl(file)
@@ -292,13 +304,6 @@ class SamplesheetReshape {
      *         {@code sample})
      */
     static List<Map<String, Object>> parseReshapedCsv(Object csvFile) {
-        return ReshapedCsvParser.parse(CsvSupport.asFile(csvFile))
-    }
-
-    static List<Map<String, Object>> parseReshapedCsv(Object csvFile, Map opts) {
-        // Reserved for forward-compat opts (e.g. lane sort, error
-        // tolerance). Currently a thin pass-through; the argument is
-        // accepted so adding opts later is non-breaking.
         return ReshapedCsvParser.parse(CsvSupport.asFile(csvFile))
     }
 }

@@ -24,9 +24,13 @@
  * <ul>
  *   <li>Quoted fields with the separator inside</li>
  *   <li>Escaped double-quotes inside a quoted field ({@code ""} → {@code "})</li>
+ *   <li>Multi-line quoted cells (a {@code \n} inside a quoted region
+ *       is content, not a line terminator — full RFC-4180)</li>
  *   <li>Empty trailing fields (a single-end row's empty {@code fastq_2})</li>
  *   <li>UTF-8 BOM at start of file</li>
  *   <li>CRLF / LF / CR line endings</li>
+ *   <li>Source line numbers in error messages so a user can find
+ *       the offending line in the original CSV</li>
  * </ul>
  *
  * <h2>Output shape</h2>
@@ -58,21 +62,32 @@ class ReshapedCsvParser {
         if (text.length() > 0 && text.charAt(0) == '\uFEFF') {
             text = text.substring(1)
         }
-        // Split on any line ending. Newlines inside a quoted cell
-        // are not allowed by our writer (file paths don't contain
-        // newlines in any realistic fastq-finder scenario), so a
-        // simple split is safe.
-        String[] rawLines = text.split(/\r\n|\r|\n/)
-        // Drop empty trailing lines (the writer always emits a
-        // trailing newline; we don't want a phantom empty record
-        // at the end).
-        List<String> lines = rawLines.findAll { it != null && it.length() > 0 }
+        // Quote-aware line splitting — a `\n` inside a double-quoted
+        // cell is treated as content, not a line terminator. This
+        // matches RFC-4180 multi-line quoted cells; the previous
+        // `text.split(/\r\n|\r|\n/)` would have silently broken
+        // on a CSV that contains a multi-line cell. Source line
+        // numbers (1-based) are preserved for error messages.
+        List<CsvLine> allLines = CsvLines.splitLogicalLines(text)
+        // Drop empty lines (both leading and trailing newlines and
+        // blank lines in the middle). Empty content with a real
+        // line number is still kept so the line number is
+        // meaningful for error messages, but the parser skips it
+        // when building records.
+        List<CsvLine> lines = allLines.findAll { it.content.length() > 0 }
         if (lines.isEmpty()) {
             return []
         }
 
-        // Parse every line into a list of cells.
-        List<List<String>> rows = lines.collect { String line -> parseLine(line) }
+        // Parse every line into a list of cells, threading the
+        // 1-based source line number into parseLine so the
+        // unclosed-quote error can point to the right place.
+        List<List<String>> rows = []
+        List<Integer> rowLineNumbers = []
+        lines.each { CsvLine lineInfo ->
+            rows << parseLine(lineInfo.content, lineInfo.lineNumber)
+            rowLineNumbers << lineInfo.lineNumber
+        }
 
         // First row is the header. Must contain at least 'sample'.
         List<String> header = rows[0]
@@ -91,7 +106,14 @@ class ReshapedCsvParser {
         if (fq1Idx < 0) fq1Idx = -1
         if (fq2Idx < 0) fq2Idx = -1
 
-        return rows.drop(1).collect { List<String> row ->
+        List<Map<String, Object>> records = []
+        List<List<String>> dataRows = rows.drop(1)
+        int dataRowCount = dataRows.size()
+        for (int i = 0; i < dataRowCount; i++) {
+            List<String> row = dataRows[i]
+            // rowLineNumbers is aligned with `rows` (header + data
+            // rows), so the i-th data row is at index i+1.
+            int lineNumber = rowLineNumbers[i + 1]
             String sampleId = (sampleIdx < row.size() ? row[sampleIdx] : '').trim()
             def meta = [
                 id         : sampleId,
@@ -115,12 +137,13 @@ class ReshapedCsvParser {
                     fastq2 = cell.split(',').collect { new File(it) }
                 }
             }
-            return [
+            records << [
                 meta   : meta,
                 fastq_1: fastq1,
                 fastq_2: fastq2
             ]
         }
+        return records
     }
 
     /**
@@ -129,8 +152,13 @@ class ReshapedCsvParser {
      * region, a {@code ,} inside a quoted region is literal, and
      * a doubled {@code ""} inside a quoted region is a literal
      * quote.
+     *
+     * @param line the line text (without the trailing newline)
+     * @param lineNumber 1-based source line number, used in error
+     *                  messages so a user can find the offending
+     *                  line in the original CSV
      */
-    private static List<String> parseLine(String line) {
+    private static List<String> parseLine(String line, int lineNumber) {
         List<String> cells = []
         StringBuilder current = new StringBuilder()
         boolean inQuotes = false
@@ -177,7 +205,7 @@ class ReshapedCsvParser {
         }
         if (inQuotes) {
             throw new IllegalArgumentException(
-                "Unclosed quote in CSV line: ${line}"
+                "Unclosed quote in CSV line ${lineNumber}: ${line}"
             )
         }
         cells << current.toString()
