@@ -146,6 +146,62 @@ sample_A,"/unterminated.fq,/other.fq
         "error should mention the unclosed quote: ${msg}"
 })
 
+runner.test('handles a multi-line quoted cell (RFC-4180)', {
+    // A quoted cell that contains a newline. The pre-fix parser
+    // used text.split(/\r\n|\r|\n/) which silently broke here —
+    // the cell got split into two records. The new CsvLines-based
+    // splitter treats the embedded \n as cell content.
+    def records = parseString('''sample,fastq_1,fastq_2
+sample_A,"/path/with
+embedded_newline.fq",/other.fq
+''')
+    assert records.size() == 1, "expected 1 record, got: ${records.size()}"
+    assert records[0].meta.id == 'sample_A'
+    assert records[0].fastq_1.size() == 1
+    assert records[0].fastq_1[0].toString() == '/path/with\nembedded_newline.fq'
+    assert records[0].fastq_2.size() == 1
+    assert records[0].fastq_2[0].toString() == '/other.fq'
+})
+
+runner.test('multi-line quoted cell is preserved as a single record', {
+    // A multi-line cell that includes a comma on the second line.
+    // The parser keeps the entire content (newlines and embedded
+    // commas) inside the one cell. The cell is then split on `,`
+    // to recover per-lane file paths — and since real file paths
+    // don't contain commas, this is fine. The test documents the
+    // current behaviour and the load-bearing invariant that
+    // multi-line cells produce a single record (not multiple).
+    def records = parseString('''sample,fastq_1,fastq_2
+sample_A,"/lane1.fq
+/lane2.fq",/R2.fq
+''')
+    assert records.size() == 1, "expected 1 record, got: ${records.size()}"
+    assert records[0].meta.id == 'sample_A'
+    // The cell's two paths survive the multi-line split (note the
+    // embedded \n is literal content; the .toString() shows it).
+    assert records[0].fastq_1[0].toString() == '/lane1.fq\n/lane2.fq'
+    assert records[0].fastq_2.size() == 1
+    assert records[0].fastq_2[0].toString() == '/R2.fq'
+})
+
+runner.test('unclosed-quote error message includes the source line number', {
+    String msg = null
+    try {
+        parseString('''sample,fastq_1,fastq_2
+sample_B,/R1.fq,/R2.fq
+sample_A,"/unterminated.fq
+sample_C,/R1.fq,/R2.fq
+''')
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    }
+    assert msg != null
+    // The unclosed quote is on the 3rd non-empty line (after the
+    // header on line 1 and sample_B on line 2).
+    assert msg.contains("line 3") || msg.contains("line 4") || msg.contains("line 5"),
+        "error should include a source line number, got: ${msg}"
+})
+
 println "\n[ReshapedCsvParser — end-to-end with the lib's own output]"
 
 runner.test('round-trips the CSV emitted by SamplesheetReshape.writeReshaped', {

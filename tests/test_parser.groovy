@@ -123,6 +123,146 @@ runner.test('BCLConvert V2: end-to-end reshape produces an nf-core CSV with all 
     }
 })
 
+runner.test('V2 takes precedence over V1 when both section markers are present', {
+    // A malformed file that has both V1 and V2 sections. The
+    // parser must pick the V2 data section (because BCLConvert
+    // is what newer Illumina platforms emit, and a file with
+    // both is most likely a V2 file that has V1-style metadata
+    // sections copied in by mistake). Documents the precedence
+    // rule in code rather than just in a comment.
+    def tmp = File.createTempFile('v2_takes_precedence', '.csv')
+    tmp.text = '''[Header]
+IEMFileVersion,4
+
+[Data]
+Sample_ID,index,index2
+sample_V1,ATCGACGT,GCTAGCTA
+
+[BCLConvert_Data]
+Sample_ID,index,index2
+sample_V2,ATCGACGT,GCTAGCTA
+'''
+    try {
+        def records = SamplesheetReshape.parseSamplesheet(tmp)
+        assert records.size() == 1, "expected only the V2 sample, got: ${records.size()}"
+        assert records[0].Sample_ID == 'sample_V2',
+            "V2 sample should be parsed (V1 should be ignored), got: ${records[0].Sample_ID}"
+    } finally { tmp.delete() }
+})
+
+runner.test('V2 with only [BCLConvert_Data] (minimal V2, no [Header] or [BCLConvert_Settings]) parses', {
+    // The minimal valid V2 samplesheet has only the data section.
+    // The optional config sections ([Header], [BCLConvert_Settings])
+    // are present in the fixture but aren't required.
+    def tmp = File.createTempFile('v2_minimal', '.csv')
+    tmp.text = '''[BCLConvert_Data]
+Sample_ID,index,index2
+sample_A,ATCGACGT,GCTAGCTA
+sample_B,GGCTAACC,TGACCGAA
+'''
+    try {
+        def records = SamplesheetReshape.parseSamplesheet(tmp)
+        assert records.size() == 2, "expected 2 samples, got: ${records.size()}"
+        assert records[0].Sample_ID == 'sample_A'
+        assert records[1].Sample_ID == 'sample_B'
+        assert records[0].index == 'ATCGACGT'
+    } finally { tmp.delete() }
+})
+
+runner.test('V2 with a bad index character is caught by the bcl2fastq validator', {
+    // The validator should catch index errors in V2 records the same
+    // way it does for V1 — because the per-sample data structure is
+    // identical, the validator's checks apply unchanged. Without
+    // this test, a regression where V2 records get into a different
+    // shape (e.g., a column rename) wouldn't be caught.
+    def tmp = File.createTempFile('v2_bad_index', '.csv')
+    tmp.text = '''[Header]
+FileFormatVersion,2
+
+[BCLConvert_Data]
+Sample_ID,index,index2
+sample_A,ATCGACGT,GCTAGCTA
+sample_B,ATXGACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for the bad V2 index character"
+    assert msg.contains('I7') && msg.contains('ATXG'),
+        "expected the error to call out the bad V2 I7 sequence: ${msg}"
+})
+
+runner.test('V2 with a duplicate I7+I5 combination is caught by the bcl2fastq validator', {
+    def tmp = File.createTempFile('v2_dup_index', '.csv')
+    tmp.text = '''[Header]
+FileFormatVersion,2
+
+[BCLConvert_Data]
+Sample_ID,index,index2
+sample_A,ATCGACGT,GCTAGCTA
+sample_B,ATCGACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for duplicate V2 I7+I5"
+    assert msg.contains('Duplicate index combination'),
+        "expected the combination check to fire on V2: ${msg}"
+    assert msg.contains('sample_A') && msg.contains('sample_B'),
+        "expected both V2 colliding samples to be listed: ${msg}"
+})
+
+runner.test('V2 with a Sample_ID duplicate is caught by the bcl2fastq validator', {
+    def tmp = File.createTempFile('v2_dup_sample', '.csv')
+    tmp.text = '''[Header]
+FileFormatVersion,2
+
+[BCLConvert_Data]
+Sample_ID,index,index2
+sample_A,ATCGACGT,GCTAGCTA
+sample_A,GGCTAACC,TGACCGAA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for duplicate V2 Sample_ID"
+    assert msg.contains('Duplicate Sample_ID') && msg.contains('sample_A'),
+        "expected the duplicate check to fire on V2: ${msg}"
+})
+
+runner.test('V2 with indices 1 base apart (Hamming distance violation) is caught by the validator', {
+    // Verifies the new Hamming distance check works on V2 records,
+    // not just V1. ATCG and ATCA differ by 1 base — the check
+    // should flag this.
+    def tmp = File.createTempFile('v2_hamming', '.csv')
+    tmp.text = '''[Header]
+FileFormatVersion,2
+
+[BCLConvert_Data]
+Sample_ID,index,index2
+sample_A,ATCGACGT,GCTAGCTA
+sample_B,ATCAACGT,GCTAGCTA
+'''
+    String msg = null
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } catch (IllegalArgumentException e) {
+        msg = e.message
+    } finally { tmp.delete() }
+    assert msg != null, "expected an exception for V2 indices within Hamming distance 1"
+    assert msg.contains('Hamming distance') && msg.contains('ATCGACGT') && msg.contains('ATCAACGT'),
+        "expected the Hamming check to fire on V2: ${msg}"
+})
+
 runner.test('Quoted fields with commas and escaped quotes parse correctly', {
     def samples = SamplesheetReshape.parseSamplesheet(new File(dataDir, 'illumina_bcl2fastq_quoted.csv'))
     assert samples.size() == 2
