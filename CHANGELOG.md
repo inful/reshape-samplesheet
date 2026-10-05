@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
 ### Added
 - **BCLConvert (V2) samplesheet format support.** The parser
   now auto-detects BCLConvert V2 sheets (with `[BCLConvert_Data]`
@@ -25,8 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with 4 samples in the NovaSeq X series layout; 5 new unit
   tests in `tests/test_parser.groovy` cover V2 happy path,
   section-silencing, `[Cloud_Data]` alternative, validator
-  compatibility, and the end-to-end reshape round-trip. Total
-  unit tests: 103 (was 98).
+  compatibility, and the end-to-end reshape round-trip.
 - **Hamming distance check in the bcl2fastq validator.** For
   every pair of indices in the same column (I7 and I5), the
   validator now flags any pair whose Hamming distance is below
@@ -38,21 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cover I7, I5, identical-pair de-duplication, unequal-length
   handling, empty-cell handling, lowercase normalisation, and
   the just-above-the-limit pass case.
-
-### Changed
-- **Hamming distance check is a warning by default, not an
-  error.** A Hamming distance of 1 is a soft risk that bcl2fastq
-  may or may not handle depending on the configured mismatch
-  tolerance, and some NovaSeq X series UMI-style demultiplexing
-  workflows deliberately use close indices. So the new check
-  now prints violations to `System.err` and continues by
-  default — the pipeline doesn't abort. To promote Hamming
-  violations to errors (so they participate in the
-  all-issues-in-one-exception contract), pass
-  `hammingDistanceAsError: true` in the `opts` map on
-  `reshape(samplesheet, fastqDir, opts)` or
-  `validateBcl2fastq(samplesheet, opts)`. Total unit tests: 114
-  (was 112; +2 for the new opt-in path).
 - **New `out.samples` emit on `RESHAPE_SAMPLESHEET`** — a pre-parsed
   channel of `[meta: [id, single_end], fastq_1: [Path, ...],
   fastq_2: [Path, ...]]` tuples, built by parsing the emitted CSV
@@ -104,6 +90,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `examples/poc/nf-core-modules/modules/nf-core/fastqc/main.nf`
   is absent (i.e. the one-time setup hasn't been run on the
   CI runner).
+
+### Changed
+- **Hamming distance check is a warning by default, not an
+  error.** A Hamming distance of 1 is a soft risk that bcl2fastq
+  may or may not handle depending on the configured mismatch
+  tolerance, and some NovaSeq X series UMI-style demultiplexing
+  workflows deliberately use close indices. So the new check
+  now prints violations to `System.err` and continues by
+  default — the pipeline doesn't abort. To promote Hamming
+  violations to errors (so they participate in the
+  all-issues-in-one-exception contract), pass
+  `hammingDistanceAsError: true` in the `opts` map on
+  `reshape(samplesheet, fastq_dir, opts)` or
+  `validateBcl2fastq(samplesheet, opts)`.
+- **Multi-line quoted CSV cells are now read correctly.** The
+  ReshapedCsvParser used to split on `\n` directly, which broke
+  on any CSV that had a multi-line cell (a small but real RFC
+  4180 feature). The parser now uses a quote-aware line
+  splitter (extracted to the shared `lib/CsvLines.groovy`); the
+  unclosed-quote error message now includes the source line
+  number.
+- **Multi-value CSV cells are now RFC-4180 quoted.** The reshape
+  writer previously wrote comma-joined multi-value cells
+  unquoted, which made the CSV unparseable by `splitCsv` and
+  any standards-compliant reader. The writer now wraps any
+  cell containing `,` in double quotes; single-value cells are
+  left unquoted. Without this fix, the new `out.samples`
+  emit and `parseReshapedCsv` API wouldn't work end-to-end.
+
+### Fixed
+- **Internal: dead `V2_SECTION_MARKERS` and
+  `V2_FILE_FORMAT_VERSION_HEADER` constants** in
+  `lib/SamplesheetParser.groovy` were defined for an earlier V2
+  detection design and never used. Removed.
+- **Internal: `SamplesheetReshape.parseReshapedCsv(Object, Map)`
+  YAGNI overload** that accepted an `opts` map and ignored it
+  was removed (a public method that silently ignores its
+  arguments is worse than no overload at all). The single-arg
+  `parseReshapedCsv(Object)` is the public API.
+- **Docs: stale `.gitignore` comment for `results-poc/`** said
+  the POC wrote merged fastq.gz there via CAT_FASTQ; the POC
+  now uses nf-core/fastqc and only the reshaped CSV goes to
+  `results-poc/` (fastqc HTML/zip go to `work/`).
+- **Docs: `bin/test.sh` header** said "Four modes" but listed
+  six — fixed.
+- **Docs: root README** now documents `hammingDistanceAsError`,
+  the Hamming check itself, and the "Input handling" table
+  includes a row for Hamming violations.
+- **Docs: POC README** Caveats section now reflects the lib's
+  current coverage (V1/V2 + Hamming) vs what's still missing
+  (adapter detection, V1↔V2 conversion, OverrideCycles).
 
 ### Fixed
 - **`SamplesheetReshaper` now RFC-4180-quotes multi-value cells.**
