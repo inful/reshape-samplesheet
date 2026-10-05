@@ -54,9 +54,17 @@ class SamplesheetReshaper {
         // bcl2fastq-specific structural checks (sample ID uniqueness,
         // index sequence format and consistency). Enabled via
         // `opts.validateStructure` so reshape stays focused on file
-        // matching by default.
+        // matching by default. Hamming distance violations are
+        // warnings by default; pass `opts.hammingDistanceAsError: true`
+        // to promote them to errors.
         if (opts.validateStructure == true) {
-            SamplesheetValidator.validateBcl2fastqChecks(samples, samplesheet)
+            boolean hammingAsError = opts.hammingDistanceAsError == true
+            SamplesheetValidator.validateBcl2fastqChecks(
+                samples,
+                samplesheet,
+                SamplesheetValidator.DEFAULT_MIN_HAMMING_DISTANCE,
+                hammingAsError
+            )
         }
 
         // Collect ALL per-sample problems and report them in one error.

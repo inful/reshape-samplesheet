@@ -28,18 +28,47 @@ class SamplesheetValidator {
      * the samplesheet — LRM samplesheets (no index columns) pass the
      * index checks vacuously and only get the Sample_ID uniqueness
      * check.
+     *
+     * <p>Hamming distance violations are reported as <b>warnings</b>
+     * by default (printed to {@code System.err}) — a Hamming distance
+     * of 1 is a soft risk that bcl2fastq may or may not handle
+     * gracefully depending on the configured mismatch tolerance, and
+     * some NovaSeq X series UMI-style demultiplexing workflows
+     * deliberately use close indices. Pass
+     * {@code hammingDistanceAsError: true} via
+     * {@link SamplesheetReshape#validateBcl2fastq} (or the
+     * {@code opts} map on {@link SamplesheetReshape#reshape}) to
+     * promote them to errors.</p>
      */
     static void validateBcl2fastqChecks(List<Map<String, String>> samples, File source) {
-        validateBcl2fastqChecks(samples, source, DEFAULT_MIN_HAMMING_DISTANCE)
+        validateBcl2fastqChecks(samples, source, DEFAULT_MIN_HAMMING_DISTANCE, false)
     }
 
     /**
      * Same as {@link #validateBcl2fastqChecks(List, File)} but with
      * an explicit minimum Hamming distance. A distance of 0 disables
      * the check (useful for tiny test fixtures that wouldn't
-     * otherwise pass).
+     * otherwise pass). Hamming violations are still reported as
+     * warnings here — use the four-arg overload to make them errors.
      */
     static void validateBcl2fastqChecks(List<Map<String, String>> samples, File source, int minHammingDistance) {
+        validateBcl2fastqChecks(samples, source, minHammingDistance, false)
+    }
+
+    /**
+     * Same as the three-arg form, with an additional flag to control
+     * whether Hamming distance violations are reported as errors
+     * (collected into the exception) or warnings (printed to
+     * {@code System.err}). Called by the public
+     * {@link SamplesheetReshape#validateBcl2fastq} overload that
+     * accepts an {@code opts} map.
+     */
+    static void validateBcl2fastqChecks(
+        List<Map<String, String>> samples,
+        File source,
+        int minHammingDistance,
+        boolean hammingAsError
+    ) {
         List<String> errors = []
         Set<String> seenSampleIds = new HashSet<>()
 
@@ -119,10 +148,26 @@ class SamplesheetValidator {
         }
 
         // Hamming distance check — last so the more specific errors
-        // (uniqueness, length, characters) are reported first.
+        // (uniqueness, length, characters) are reported first. Hamming
+        // violations are warnings by default; the hammingAsError flag
+        // promotes them to the errors list so they participate in
+        // the all-issues-in-one-exception contract below.
         if (minHammingDistance > 0) {
-            checkHammingDistances(samples, 'I7 (index)', 'index',  errors, minHammingDistance)
-            checkHammingDistances(samples, 'I5 (index2)', 'index2', errors, minHammingDistance)
+            List<String> hammingWarnings = []
+            hammingWarnings.addAll(collectHammingDistances(samples, 'I7 (index)',  'index',  minHammingDistance))
+            hammingWarnings.addAll(collectHammingDistances(samples, 'I5 (index2)', 'index2', minHammingDistance))
+            for (String violation : hammingWarnings) {
+                if (hammingAsError) {
+                    errors << violation
+                } else {
+                    // Print to stderr so a pipeline run still surfaces
+                    // the warning without aborting. The bcl2fastq-
+                    // specific format helps Nextflow's log parser
+                    // (if any) recognise it; in a plain CLI run it
+                    // shows up alongside the rest of Nextflow's output.
+                    System.err.println("WARNING: ${violation} (file: ${source?.absolutePath})")
+                }
+            }
         }
 
         if (!errors.isEmpty()) {
@@ -165,27 +210,36 @@ class SamplesheetValidator {
     }
 
     /**
-     * For every pair of indices in the named column, flag pairs
-     * whose Hamming distance is below {@code minDistance}. Catches
-     * demultiplexing risks where one sequencing error could
-     * cross-assign a read to the wrong sample. Skips empty cells
-     * (those are caught by the dedicated empty-index check) and
-     * unequal-length indices (those are caught by the length check).
+     * For every pair of indices in the named column, return a list
+     * of "Hamming distance violation" messages for pairs whose
+     * distance is below {@code minDistance}. Returns an empty list
+     * if no violations. Catches demultiplexing risks where one
+     * sequencing error could cross-assign a read to the wrong
+     * sample. Skips empty cells (those are caught by the dedicated
+     * empty-index check) and unequal-length indices (those are
+     * caught by the length check).
+     *
+     * The caller decides whether to add the messages to the
+     * errors list (which throws) or print them as warnings — the
+     * Hamming check is the only bcl2fastq check with that
+     * flexibility because a Hamming distance of 1 is a soft risk
+     * that bcl2fastq may or may not handle depending on the
+     * configured mismatch tolerance.
      *
      * @param samples the parsed sample list
      * @param columnLabel user-facing label for the column (e.g. "I7 (index)")
      * @param columnKey the map key in the sample map (e.g. "index")
-     * @param errors the running list of error messages to append to
      * @param minDistance the minimum allowed Hamming distance between
      *                    any two indices in the column
+     * @return list of violation messages (possibly empty)
      */
-    private static void checkHammingDistances(
+    private static List<String> collectHammingDistances(
         List<Map<String, String>> samples,
         String columnLabel,
         String columnKey,
-        List<String> errors,
         int minDistance
     ) {
+        List<String> violations = []
         // Collect (sampleId, uppercasedIndex) pairs for non-empty
         // cells. Skip entries with invalid characters — those are
         // already flagged by the character check and would throw
@@ -205,7 +259,7 @@ class SamplesheetValidator {
         }
 
         // Need at least 2 entries to compute a distance.
-        if (entries.size() < 2) return
+        if (entries.size() < 2) return violations
 
         // Compare all pairs. n^2 is fine — samplesheets have at
         // most a few thousand samples, and the comparison itself is
@@ -221,9 +275,10 @@ class SamplesheetValidator {
                     continue
                 }
                 if (dist < minDistance) {
-                    errors << "${columnLabel} Hamming distance violation: '${entries[i][1]}' (sample '${entries[i][0]}') and '${entries[j][1]}' (sample '${entries[j][0]}') differ by only ${dist} base(s); minimum allowed is ${minDistance} (a single sequencing error could misassign reads between these samples)"
+                    violations << "${columnLabel} Hamming distance violation: '${entries[i][1]}' (sample '${entries[i][0]}') and '${entries[j][1]}' (sample '${entries[j][0]}') differ by only ${dist} base(s); minimum allowed is ${minDistance} (a single sequencing error could misassign reads between these samples)"
                 }
             }
         }
+        return violations
     }
 }

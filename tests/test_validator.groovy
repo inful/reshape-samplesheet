@@ -223,10 +223,41 @@ sample_B,sample_B,project,GGCC,TGAA
     } finally { tmp.delete() }
 })
 
-runner.test('validateBcl2fastq throws on I7 indices within default Hamming distance (1 base apart)', {
+runner.test('validateBcl2fastq reports I7 Hamming violations as warnings by default (does not throw)', {
+    // The default behaviour is "warn, don't throw": a Hamming
+    // distance of 1 is a soft risk that bcl2fastq may or may not
+    // handle gracefully, so we surface it but don't abort the
+    // pipeline. Capture stderr to verify the warning fires.
     def tmp = File.createTempFile('hamming_i7_close', '.csv')
-    // ATCG and ATCA differ by 1 base. A single sequencing error
-    // on the I7 read could cross-assign sample_B reads to sample_A.
+    tmp.text = '''[Data]
+Sample_ID,Sample_Name,index,index2
+sample_A,sample_A,ATCGACGT,GCTAGCTA
+sample_B,sample_B,ATCAACGT,GCTAGCTA
+'''
+    def original = System.err
+    def captured = new ByteArrayOutputStream()
+    System.setErr(new PrintStream(captured))
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } finally {
+        System.setErr(original)
+        tmp.delete()
+    }
+    String stderr = captured.toString()
+    assert stderr.contains('WARNING') && stderr.contains('Hamming distance'),
+        "expected a Hamming-distance warning on stderr, got: ${stderr}"
+    assert stderr.contains('ATCGACGT') && stderr.contains('ATCAACGT'),
+        "expected both indices to be named in the warning: ${stderr}"
+    assert stderr.contains('sample_A') && stderr.contains('sample_B'),
+        "expected both samples to be named in the warning: ${stderr}"
+})
+
+runner.test('validateBcl2fastq promotes I7 Hamming violations to errors with hammingDistanceAsError:true', {
+    // Opt in to the strict behaviour via the opts map. The
+    // Hamming violation should now participate in the
+    // all-issues-in-one-exception contract, like the other
+    // bcl2fastq checks.
+    def tmp = File.createTempFile('hamming_i7_close', '.csv')
     tmp.text = '''[Data]
 Sample_ID,Sample_Name,index,index2
 sample_A,sample_A,ATCGACGT,GCTAGCTA
@@ -234,11 +265,11 @@ sample_B,sample_B,ATCAACGT,GCTAGCTA
 '''
     String msg = null
     try {
-        SamplesheetReshape.validateBcl2fastq(tmp)
+        SamplesheetReshape.validateBcl2fastq(tmp, [hammingDistanceAsError: true])
     } catch (IllegalArgumentException e) {
         msg = e.message
     } finally { tmp.delete() }
-    assert msg != null, "expected an exception for indices within Hamming distance 1"
+    assert msg != null, "expected an exception for indices within Hamming distance 1 with the opt-in"
     assert msg.contains('Hamming distance'),
         "expected the error to mention Hamming distance: ${msg}"
     assert msg.contains('ATCGACGT') && msg.contains('ATCAACGT'),
@@ -252,20 +283,29 @@ sample_B,sample_B,ATCAACGT,GCTAGCTA
 runner.test('validateBcl2fastq accepts I7 indices that differ by exactly minDistance (2) bases', {
     def tmp = File.createTempFile('hamming_i7_min', '.csv')
     // ATCGACGT and ATGCATCG differ by 4 bases — well above the
-    // default minimum of 2. Should pass cleanly.
+    // default minimum of 2. Should pass cleanly (no warning, no
+    // error).
     tmp.text = '''[Data]
 Sample_ID,Sample_Name,index,index2
 sample_A,sample_A,ATCGACGT,GCTAGCTA
 sample_B,sample_B,ATGCATCG,GCTAGCTA
 '''
+    def original = System.err
+    def captured = new ByteArrayOutputStream()
+    System.setErr(new PrintStream(captured))
     try {
         SamplesheetReshape.validateBcl2fastq(tmp)
     } catch (IllegalArgumentException e) {
         assert false, "indices differing by 4 bases should pass: ${e.message}"
-    } finally { tmp.delete() }
+    } finally {
+        System.setErr(original)
+        tmp.delete()
+    }
+    assert !captured.toString().contains('Hamming distance'),
+        "should not have produced a warning for indices well above the minimum"
 })
 
-runner.test('validateBcl2fastq throws on I5 indices within Hamming distance', {
+runner.test('validateBcl2fastq reports I5 Hamming violations as warnings by default', {
     // Same check on the I5 column — different content, same logic.
     def tmp = File.createTempFile('hamming_i5', '.csv')
     tmp.text = '''[Data]
@@ -273,15 +313,18 @@ Sample_ID,Sample_Name,index,index2
 sample_A,sample_A,ATCGACGT,GCTAGCTA
 sample_B,sample_B,ATCGACGT,GCAAGCTA
 '''
-    String msg = null
+    def original = System.err
+    def captured = new ByteArrayOutputStream()
+    System.setErr(new PrintStream(captured))
     try {
         SamplesheetReshape.validateBcl2fastq(tmp)
-    } catch (IllegalArgumentException e) {
-        msg = e.message
-    } finally { tmp.delete() }
-    assert msg != null, "expected an exception for I5 indices within Hamming distance 1"
-    assert msg.contains('I5') && msg.contains('Hamming distance'),
-        "expected the error to mention I5 Hamming distance: ${msg}"
+    } finally {
+        System.setErr(original)
+        tmp.delete()
+    }
+    String stderr = captured.toString()
+    assert stderr.contains('I5') && stderr.contains('Hamming distance'),
+        "expected the warning to mention I5 Hamming distance: ${stderr}"
 })
 
 runner.test('validateBcl2fastq does not double-report identical indices via the Hamming check', {
@@ -357,25 +400,29 @@ sample_B,sample_B,,GCTAGCTA
         "Hamming check should not report a violation involving an empty cell (got: ${msg})"
 })
 
-runner.test('validateBcl2fastq normalises lowercase indices before the Hamming check', {
+runner.test('validateBcl2fastq normalises lowercase indices before the Hamming check (warning path)', {
     // The character check normalises to uppercase; the Hamming
     // check should do the same so 'atcg' and 'ATCA' (Hamming
-    // distance 1) get flagged even when written lowercase.
+    // distance 1) get flagged even when written lowercase. By
+    // default this is a warning.
     def tmp = File.createTempFile('hamming_case', '.csv')
     tmp.text = '''[Data]
 Sample_ID,Sample_Name,index,index2
 sample_A,sample_A,atcgacgt,GCTAGCTA
 sample_B,sample_A,atcaacgt,GCTAGCTA
 '''
-    String msg = null
+    def original = System.err
+    def captured = new ByteArrayOutputStream()
+    System.setErr(new PrintStream(captured))
     try {
         SamplesheetReshape.validateBcl2fastq(tmp)
-    } catch (IllegalArgumentException e) {
-        msg = e.message
-    } finally { tmp.delete() }
-    assert msg != null, "expected an exception for lowercase indices within Hamming distance 1"
-    assert msg.contains('Hamming distance') && msg.contains('ATCGACGT') && msg.contains('ATCAACGT'),
-        "expected normalised indices in the error: ${msg}"
+    } finally {
+        System.setErr(original)
+        tmp.delete()
+    }
+    String stderr = captured.toString()
+    assert stderr.contains('Hamming distance') && stderr.contains('ATCGACGT') && stderr.contains('ATCAACGT'),
+        "expected normalised indices in the warning: ${stderr}"
 })
 
 // -----------------------------------------------------------------------------

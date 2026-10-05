@@ -135,15 +135,38 @@ class SamplesheetReshape {
      *
      * <p>Same exception contract as {@link #reshape}: throws
      * {@link IllegalArgumentException} with a clear, complete error
-     * message listing all issues at once.</p>
+     * message listing all issues at once. <b>Index Hamming distance
+     * violations are reported as warnings</b> by default (printed to
+     * {@code System.err}) — a Hamming distance of 1 is a soft risk
+     * that bcl2fastq may or may not handle depending on the configured
+     * mismatch tolerance, and some NovaSeq X series UMI-style
+     * demultiplexing workflows deliberately use close indices. Pass
+     * {@code hammingDistanceAsError: true} in {@code opts} to promote
+     * them to errors.</p>
+     *
+     * @param samplesheet the samplesheet to validate
+     * @param opts optional configuration (default: empty map)
+     *        <ul>
+     *          <li>{@code hammingDistanceAsError} (Boolean, default
+     *              {@code false}) — when {@code true}, Hamming distance
+     *              violations participate in the all-issues-in-one-
+     *              exception contract; when {@code false} (the default),
+     *              they're reported as warnings instead.</li>
+     *        </ul>
      */
-    static void validateBcl2fastq(File samplesheet) {
+    static void validateBcl2fastq(File samplesheet, Map opts = [:]) {
         List<Map<String, String>> samples = SamplesheetParser.parseSamplesheetImpl(samplesheet)
-        SamplesheetValidator.validateBcl2fastqChecks(samples, samplesheet)
+        boolean hammingAsError = opts.hammingDistanceAsError == true
+        SamplesheetValidator.validateBcl2fastqChecks(
+            samples,
+            samplesheet,
+            SamplesheetValidator.DEFAULT_MIN_HAMMING_DISTANCE,
+            hammingAsError
+        )
     }
 
-    static void validateBcl2fastq(Object samplesheet) {
-        validateBcl2fastq(CsvSupport.asFile(samplesheet))
+    static void validateBcl2fastq(Object samplesheet, Map opts = [:]) {
+        validateBcl2fastq(CsvSupport.asFile(samplesheet), opts)
     }
 
     // ---- reshape ----
@@ -186,8 +209,19 @@ class SamplesheetReshape {
      *    I7/I5 lengths across samples, and unique I7+I5 index
      *    combinations. Useful for a combined pre-flight that
      *    validates both the samplesheet and the fastq matches in one
-     *    pass. See {@link #validateBcl2fastq(File)} for the
+     *    pass. See {@link #validateBcl2fastq(File, Map)} for the
      *    samplesheet-only version.
+     *  - {@code hammingDistanceAsError} (Boolean, default {@code false}) —
+     *    only meaningful when {@code validateStructure} is true. Controls
+     *    whether Hamming-distance index violations are reported as
+     *    errors (thrown, collected with the other bcl2fastq issues) or
+     *    as warnings (printed to {@code System.err}, the pipeline
+     *    continues). A Hamming distance of 1 is a soft risk that
+     *    bcl2fastq may or may not handle depending on the configured
+     *    mismatch tolerance, so the warning default is deliberate.
+     *    Opt in to the strict behaviour when you need a hard guarantee
+     *    (e.g. for production runs where every close-index pair is
+     *    worth investigating).
      * Unknown keys are silently ignored so future options can be
      * added without breaking callers.
      */

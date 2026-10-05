@@ -41,6 +41,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   de-duplication, unequal-length handling, empty-cell handling,
   lowercase normalisation, and the just-above-the-limit pass
   case.
+
+### Changed
+- **Hamming distance check is a warning by default, not an
+  error.** A Hamming distance of 1 is a soft risk that bcl2fastq
+  may or may not handle depending on the configured mismatch
+  tolerance, and some NovaSeq X series UMI-style demultiplexing
+  workflows deliberately use close indices. So the new check
+  now prints violations to `System.err` and continues by
+  default — the pipeline doesn't abort. To promote Hamming
+  violations to errors (so they participate in the
+  all-issues-in-one-exception contract), pass
+  `hammingDistanceAsError: true` in the `opts` map on
+  `reshape(samplesheet, fastqDir, opts)` or
+  `validateBcl2fastq(samplesheet, opts)`. Total unit tests: 114
+  (was 112; +2 for the new opt-in path).
 - **New `out.samples` emit on `RESHAPE_SAMPLESHEET`** — a pre-parsed
   channel of `[meta: [id, single_end], fastq_1: [Path, ...],
   fastq_2: [Path, ...]]` tuples, built by parsing the emitted CSV

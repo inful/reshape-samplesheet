@@ -239,11 +239,39 @@ sample_A,GGCTAACC,TGACCGAA
         "expected the duplicate check to fire on V2: ${msg}"
 })
 
-runner.test('V2 with indices 1 base apart (Hamming distance violation) is caught by the validator', {
-    // Verifies the new Hamming distance check works on V2 records,
-    // not just V1. ATCG and ATCA differ by 1 base — the check
-    // should flag this.
+runner.test('V2 with indices 1 base apart (Hamming distance violation) is reported as a warning on V2', {
+    // Verifies the Hamming distance check works on V2 records,
+    // not just V1. By default the violation is a warning, not
+    // an exception. Use hammingDistanceAsError: true to opt
+    // into the strict behaviour.
     def tmp = File.createTempFile('v2_hamming', '.csv')
+    tmp.text = '''[Header]
+FileFormatVersion,2
+
+[BCLConvert_Data]
+Sample_ID,index,index2
+sample_A,ATCGACGT,GCTAGCTA
+sample_B,ATCAACGT,GCTAGCTA
+'''
+    def original = System.err
+    def captured = new ByteArrayOutputStream()
+    System.setErr(new PrintStream(captured))
+    try {
+        SamplesheetReshape.validateBcl2fastq(tmp)
+    } finally {
+        System.setErr(original)
+        tmp.delete()
+    }
+    String stderr = captured.toString()
+    assert stderr.contains('Hamming distance') && stderr.contains('ATCGACGT') && stderr.contains('ATCAACGT'),
+        "expected the Hamming check to fire on V2: ${stderr}"
+})
+
+runner.test('V2 with indices 1 base apart throws when hammingDistanceAsError: true is set', {
+    // Same V2 fixture as above, but with the strict opt-in. The
+    // Hamming violation should now participate in the all-issues-
+    // in-one-exception contract.
+    def tmp = File.createTempFile('v2_hamming_error', '.csv')
     tmp.text = '''[Header]
 FileFormatVersion,2
 
@@ -254,13 +282,13 @@ sample_B,ATCAACGT,GCTAGCTA
 '''
     String msg = null
     try {
-        SamplesheetReshape.validateBcl2fastq(tmp)
+        SamplesheetReshape.validateBcl2fastq(tmp, [hammingDistanceAsError: true])
     } catch (IllegalArgumentException e) {
         msg = e.message
     } finally { tmp.delete() }
-    assert msg != null, "expected an exception for V2 indices within Hamming distance 1"
-    assert msg.contains('Hamming distance') && msg.contains('ATCGACGT') && msg.contains('ATCAACGT'),
-        "expected the Hamming check to fire on V2: ${msg}"
+    assert msg != null, "expected an exception for V2 indices within Hamming distance 1 with the opt-in"
+    assert msg.contains('Hamming distance'),
+        "expected the error to mention Hamming distance: ${msg}"
 })
 
 runner.test('Quoted fields with commas and escaped quotes parse correctly', {
