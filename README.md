@@ -12,8 +12,16 @@ ships Groovy, and the parser is in `lib/SamplesheetParser.groovy`.
 ## What it does
 
 Given:
-- an Illumina `SampleSheet.csv` (either the bcl2fastq format with `[Data]`
-  sections, or the Local Run Manager headerless variant), and
+- an Illumina `SampleSheet.csv` in any of three auto-detected formats:
+  - **bcl2fastq (V1, IEM)** — has a `[Data]` section (NovaSeq 6000 and
+    earlier Illumina platforms)
+  - **BCLConvert (V2)** — has a `[BCLConvert_Data]` or `[Cloud_Data]`
+    section (NovaSeq X series and newer Illumina platforms). V2-specific
+    config sections like `[BCLConvert_Settings]` and `OverrideCycles` are
+    recognised for auto-detection but not used by the reshape use case —
+    the per-sample data rows have the same structure as V1.
+  - **Local Run Manager (LRM)** — headerless variant, first line is the
+    header
 - a directory of fastq files produced by `bcl2fastq` (or any tool that
   names files as `{SampleID}_S{N}_L00{Lane}_R{1,2}_001.fastq.gz`),
 

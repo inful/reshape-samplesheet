@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Runs the reshape-samplesheet tests.
 #
-# Four modes:
+# Six modes:
 #   1. unit      — bespoke Groovy unit tests of every parser/reshape/
 #                  validator/opts-coercion/matching edge case plus the
-#                  new ReshapedCsvParser. Tests the lib directly (no
-#                  Nextflow required). Fast: finishes in ~10s. Needs
-#                  `groovy` on PATH.
+#                  ReshapedCsvParser. Tests the lib directly (no Nextflow
+#                  required). Fast: finishes in ~10s. Needs `groovy` on PATH.
 #   2. nf-test   — nf-core nf-test suite that exercises the full
-#                  sub-workflow emit path (including the new
-#                  `samples` emit). Needs `nf-test` + `nextflow`.
-#                  Finishes in ~30s.
+#                  sub-workflow emit path (including the `samples` emit).
+#                  Needs `nf-test` + `nextflow`. Finishes in ~30s.
 #   3. smoke     — Nextflow end-to-end via main.nf. Needs `nextflow`.
 #   4. auto      — runs unit + nf-test if nf-test is on PATH, else
 #                  unit + smoke. Default when called with no flags.

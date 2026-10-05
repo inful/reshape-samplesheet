@@ -25,7 +25,8 @@ nf-test
 # control.
 examples/poc/lib/
 examples/poc/nf-core-modules/
-# Smoke-test output: the POC's end-to-end run writes merged
-# fastq.gz here via CAT_FASTQ. Ignored to keep the working tree
-# clean between runs.
+# POC smoke-test output: the reshaped CSV lands here. The fastqc
+# HTML/zip reports land in work/ (the per-process workdir) by
+# default — add a publishDir directive in the POC's process
+# block to also publish them to outdir.
 results-poc/
