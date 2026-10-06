@@ -331,13 +331,18 @@ nextflow_workflow {
                 // the process sees it. The script's rm only targets the
                 // specific CSV it's about to regenerate, so the sentinel
                 // should still be there after the reshape.
-                // Pre-populate the output_dir with a sentinel file before
-                // the process sees it. The script's rm only targets the
-                // specific CSV it's about to regenerate, so the sentinel
-                // should still be there after the reshape. The path is
-                // given as an absolute path so file() doesn't have to
-                // resolve it through any projectDir interpolation.
-                def outDirPath = file("\${projectDir}/../../../../tests/.nfcore_test_output")
+                //
+                // The `${projectDir}` reference must be escaped with `\$`
+                // (so Groovy leaves it as a literal in the generated
+                // script) and the outer quotes must be single (so Nextflow's
+                // `file()` evaluates `${projectDir}` itself, the same way
+                // it does for the other `file()` calls in this test).
+                // With double quotes around the path, Groovy would
+                // interpolate `${projectDir}` to the *project root* before
+                // `file()` ever sees the string, and the four `..` segments
+                // would escape the project entirely (e.g. to `/home/tests/`
+                // on a GitHub runner, where the runner user can't write).
+                def outDirPath = file('\${projectDir}/../../../../tests/.nfcore_test_output')
                 outDirPath.toFile().mkdirs()
                 new File(outDirPath.toFile(), 'sentinel.log').text = 'do not delete'
 
