@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CSV cell quoting/escaping consolidated in a shared `lib/CsvCell.groovy`**.
+  Three sites — input parsing (`SamplesheetParser`), output parsing
+  (`ReshapedCsvParser`), and output writing (`SamplesheetReshaper`) —
+  now all route through one RFC-4180 contract. Previously the
+  writer's `joinPaths` ad-hoc helper and the input parser's private
+  `parseCsvLine` had duplicated cell-handling logic that drifted
+  twice in the 0.3.0 release (multi-line cells, multi-value cells).
+  The new `CsvCell.quote` and `CsvCell.parseLine` are the single
+  source of truth and are tested in isolation. 24 new tests in
+  `tests/test_csv_cell.groovy` cover happy path, edge cases
+  (embedded `,`, `"`, `\n`, `\r`), and the round-trip property.
+
+### Fixed
+- **Writer now RFC-4180-quotes every cell that needs it, including the
+  Sample_ID and strandedness columns.** Previously the writer
+  quoted multi-value cells (multiple R1/R2 paths joined with `,`)
+  via the `joinPaths` helper but emitted the sample-id cell and the
+  strandedness cell raw — so a Sample_ID containing `,` (e.g.
+  `study_X,patient_Y`) was emitted as
+  `study_X,patient_Y,/r1,/r2`, and the parser on the receiving
+  side (the sub-workflow's `samples` emit and the
+  `SamplesheetReshape.parseReshapedCsv` public API) silently
+  truncated `meta.id` to `study_X`, with the rest of the row
+  falling off into phantom columns. The writer now wraps any cell
+  containing `,`, `"`, `\n`, or `\r` per RFC-4180 (with `"` doubled
+  to `""` inside the quoted region), and an end-to-end regression
+  test locks the round-trip. Behaviour change for previously-unique
+  paths in the r1/r2 cells that contain a comma: those single-path
+  cells are now also quoted. (Single-path cells with no special
+  character are still emitted unquoted, matching every nf-core
+  pipeline's samplesheet convention.)
+
 ## [0.3.1] - 2026-10-05
 
 ### Fixed
