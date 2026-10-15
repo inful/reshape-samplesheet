@@ -244,4 +244,59 @@ runner.test('round-trips the CSV emitted by SamplesheetReshape.writeReshaped', {
     }
 })
 
+// -----------------------------------------------------------------------------
+// round-trip with pathological Sample_IDs — the regression lock for
+// the pre-refactor behaviour where the writer quoted multi-value cells
+// but NOT the sample-id cell, so a comma in the Sample_ID would
+// silently mangle the round-tripped record (meta id truncated at the
+// separator). Now that both halves of the round-trip (writer and
+// parser) share the same RFC-4180 primitives in CsvCell, the contract
+// is locked in one place.
+// -----------------------------------------------------------------------------
+println "\n[ReshapedCsvParser — round-trip with pathological Sample_IDs]"
+
+runner.test('round-trips a CSV whose Sample_ID contains the separator', {
+    // This is the exact shape of the output that the writer produces
+    // for a Sample_ID like "study_X,patient_Y" — the Sample_ID cell is
+    // quoted because it contains the separator.
+    def tmp = File.createTempFile('reshaped_csv_comma_id_', '.csv')
+    tmp.text = '''sample,fastq_1,fastq_2
+"study_X,patient_Y","/path/to/A_R1.fq","/path/to/A_R2.fq"
+'''
+    try {
+        def records = SamplesheetReshape.parseReshapedCsv(tmp)
+        assert records.size() == 1, "expected 1 record, got: ${records.size()}"
+        // The pre-refactor behaviour would have produced
+        // meta.id = "study_X" and a misaligned fastq_2 = "patient_Y"",
+        // because the parser would have split the unquoted cell on the
+        // embedded comma. With RFC-4180 quoting, the embedded comma is
+        // safely inside the cell and meta.id is preserved.
+        assert records[0].meta.id == 'study_X,patient_Y',
+            "meta.id should preserve the full Sample_ID with the embedded comma, got: '${records[0].meta.id}'"
+        assert records[0].fastq_1.size() == 1
+        assert records[0].fastq_2.size() == 1
+    } finally {
+        tmp.delete()
+    }
+})
+
+runner.test('round-trips a CSV whose Sample_ID contains an embedded double-quote', {
+    // A Sample_ID containing `"` is far less common than one with `,`,
+    // but the writer must escape it the same way for the parser to
+    // recover it cleanly.
+    def tmp = File.createTempFile('reshaped_csv_quote_id_', '.csv')
+    tmp.text = 'sample,fastq_1,fastq_2\n' +
+               '"sample""with""quote",/path/R1.fq,/path/R2.fq\n'
+    try {
+        def records = SamplesheetReshape.parseReshapedCsv(tmp)
+        assert records.size() == 1
+        // The doubled "" inside the quoted cell decodes to a single "
+        // on the way out.
+        assert records[0].meta.id == 'sample"with"quote',
+            "embedded \"\" should decode to a single literal \", got: '${records[0].meta.id}'"
+    } finally {
+        tmp.delete()
+    }
+})
+
 System.exit(runner.summary())

@@ -315,4 +315,116 @@ runner.test('writeReshaped creates the output dir if it does not exist', {
     }
 })
 
+// -----------------------------------------------------------------------------
+// RFC-4180 cell quoting on output — the regression lock for the
+// pre-refactor behaviour where the writer quoted multi-value cells
+// (r1/r2 with `,` inside) but did NOT quote sample IDs or strandedness
+// values containing `,`, `"`, `\n`, or `\r`. Previously the unquoted
+// sample-id round-tripped through ReshapedCsvParser into a row that
+// was mis-aligned: the parser split on the inner separator and the
+// meta id ended up as only the substring before the first comma.
+// -----------------------------------------------------------------------------
+println "\n[writer RFC-4180 cell quoting]"
+
+runner.test('writer quotes a Sample_ID that contains the separator (round-trip-safe)',
+            {
+    // The load-bearing regression: a Sample_ID like "study_X,patient_Y"
+    // contains the separator. The old writer would have emitted it
+    // unquoted as `study_X,patient_Y,/r1,/r2` — when a downstream
+    // parser split that on `,`, it would read 4 cells instead of 3
+    // and the meta id would be silently truncated to "study_X". The
+    // writer now RFC-4180-quotes any cell containing `,`, so the row
+    // reads back as 3 cells with the full id intact.
+    //
+    // We exercise this end-to-end by running reshape on a properly
+    // quoted Sample_ID (the input parser already accepts quoted
+    // sample ids via CsvCell.parseLine; see test_parser.groovy's
+    // "Quoted fields with commas …" test for the input side) and
+    // then verifying both the on-the-wire CSV is quoted AND that
+    // parseReshapedCsv reads it back with the full id preserved.
+    //
+    // Note on the fastq cells: the parser splits multi-value cells
+    // on the unescaped separator, so a single fastq path that itself
+    // contains a comma (because the Sample_ID prefix did) will be
+    // split into multiple "files". That's a separate parser design
+    // — out of scope for this regression, which is specifically
+    // about the Sample_ID cell surviving the round-trip. The test
+    // below asserts only the things that were silently broken
+    // before: the on-wire quoting and the meta id preservation.
+    def root = Files.createTempDirectory('reshape_comma_sampleid_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    // Comma is a legitimate filename character on macOS/Linux/Windows;
+    // the matching regex's `startsWith(sampleId)` + separator check
+    // (`_` after the id) accepts these just like an underscore-
+    // delimited name would.
+    new File(root, 'study_X,patient_Y_S1_L001_R1_001.fastq.gz').bytes = bytes
+    new File(root, 'study_X,patient_Y_S1_L001_R2_001.fastq.gz').bytes = bytes
+    try {
+        def tmp = File.createTempFile('comma_sample', '.csv')
+        tmp.text = '''[Data]
+Sample_ID,index,index2
+"study_X,patient_Y",ATCG,GCTA
+'''
+        def csvFile
+        try {
+            // Drive the writer through the public writeReshaped path
+            // so we test the same code as a real pipeline run.
+            def outDir = Files.createTempDirectory('comma_out_').toFile()
+            csvFile = SamplesheetReshape.writeReshaped(
+                outDir, tmp, root
+            )
+            String csv = csvFile.text
+            def row = csv.readLines().drop(1).find { it.contains('study_X') }
+            assert row != null, "row for the comma-id sample missing: ${csv}"
+            assert row.startsWith('"study_X,patient_Y",'),
+                "Sample_ID with embedded separator must be RFC-4180 quoted, got: ${row}"
+
+            // Now verify the parser round-trips the writer's output
+            // — this is the exact path the sub-workflow's `samples`
+            // emit takes (RESHAPE_SAMPLESHEET.out.csv →
+            // parseReshapedCsv → records).
+            def records = SamplesheetReshape.parseReshapedCsv(csvFile)
+            def record = records.find { it.meta.id?.contains('study_X') }
+            assert record != null, "round-tripped record missing for the comma-id sample"
+            assert record.meta.id == 'study_X,patient_Y',
+                "round-trip should preserve the full Sample_ID with the comma intact, got: '${record.meta.id}'"
+        } finally {
+            tmp.delete()
+            csvFile?.parentFile?.deleteDir()
+        }
+    } finally { root.deleteDir() }
+})
+
+runner.test('writer quotes a strandedness value that contains the separator',
+            {
+    // A strandedness value like "for,ward" — pathological but a
+    // strict test of the contract. Without quoting, the row would
+    // have 5 cells (sample, r1, r2, "for", "ward") and the trailing
+    // column would have fallen off.
+    def root = Files.createTempDirectory('reshape_comma_stranded_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    new File(root, 'sample_A_S1_L001_R1_001.fastq.gz').bytes = bytes
+    new File(root, 'sample_A_S1_L001_R2_001.fastq.gz').bytes = bytes
+    try {
+        def tmp = File.createTempFile('comma_stranded', '.csv')
+        tmp.text = '''[Data]
+Sample_ID,index,index2
+sample_A,ATCG,GCTA
+'''
+        try {
+            String csv = SamplesheetReshape.reshape(
+                tmp, root,
+                [strandedness: 'for,ward']
+            )
+            def header = csv.readLines()[0]
+            assert header == 'sample,fastq_1,fastq_2,strandedness',
+                "header should still be 4 columns, got: '${header}'"
+            def row = csv.readLines().drop(1).find { it.startsWith('sample_A,') }
+            assert row != null
+            assert row.endsWith(',"for,ward"'),
+                "strandedness with embedded separator must be quoted; got: '${row}'"
+        } finally { tmp.delete() }
+    } finally { root.deleteDir() }
+})
+
 System.exit(runner.summary())
