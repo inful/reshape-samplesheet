@@ -2,6 +2,13 @@
  * Internal reshaper — produces the nf-core samplesheet CSV from an
  * Illumina samplesheet and a directory of fastq files. Not part of the
  * public API; called from {@link SamplesheetReshape}.
+ *
+ * <p>CSV serialization is delegated to {@link CsvCell#quote} for
+ * cell-level RFC-4180 quoting. The reader counterpart
+ * ({@link ReshapedCsvParser}) parses with {@link CsvCell#parseLine},
+ * which is also the parser used for input samplesheets by
+ * {@link SamplesheetParser}. All four sites — input parser, output
+ * parser, output writer — share one RFC-4180 contract.</p>
  */
 class SamplesheetReshaper {
 
@@ -84,8 +91,15 @@ class SamplesheetReshaper {
                 missingSamples << sampleId
                 return
             }
-            String r1 = joinPaths(matches.findAll { isReadFile(it.name, 1) })
-            String r2 = joinPaths(matches.findAll { isReadFile(it.name, 2) })
+            // Build the per-direction cells as a `,`-joined list of
+            // paths. Cell-level RFC-4180 quoting is the writer's
+            // responsibility (CsvCell.quote), not the matcher —
+            // keeps the matching logic and the serialization
+            // concern in separate functions.
+            String r1 = matches.findAll { isReadFile(it.name, 1) }
+                                  .collect { it.absolutePath }.join(',')
+            String r2 = matches.findAll { isReadFile(it.name, 2) }
+                                  .collect { it.absolutePath }.join(',')
             validSamples << [sampleId: sampleId, r1: r1, r2: r2]
         }
 
@@ -98,21 +112,38 @@ class SamplesheetReshaper {
             )
         }
 
-        // We now know everything is valid; build the output.
-        StringBuilder out = new StringBuilder()
-        out.append('sample,fastq_1,fastq_2')
+        // We now know everything is valid; build the output. Every
+        // cell goes through CsvCell.quote so values containing the
+        // separator `,`, an embedded `"`, `\n`, or `\r` are emitted
+        // as RFC-4180 quoted (with `"` doubled to `""`). Without
+        // this, a Sample_ID containing `,` (or a strandedness value
+        // that does) would produce a row that, when later parsed
+        // back through the lib's ReshapedCsvParser, silently ends up
+        // mis-aligned: the parser would split the row on the inner
+        // separator and the meta id would be only the substring
+        // before the first comma, with the rest of the row falling
+        // off into phantom columns.
+        //
+        // Header cells are also routed through CsvCell.quote for
+        // symmetry; for known headers (`sample`, `fastq_1`,
+        // `fastq_2`, `strandedness`) it's a no-op since none of
+        // them contain a special character.
+        List<String> header = ['sample', 'fastq_1', 'fastq_2']
         if (strandedness != null) {
-            out.append(',strandedness')
+            header << 'strandedness'
         }
-        out.append('\n')
-
+        List<List<String>> rows = [header]
         validSamples.each { v ->
-            out.append(v.sampleId).append(',')
-            out.append(v.r1).append(',')
-            out.append(v.r2)
+            List<String> row = [v.sampleId, v.r1, v.r2]
             if (strandedness != null) {
-                out.append(',').append(strandedness)
+                row << strandedness
             }
+            rows << row
+        }
+
+        StringBuilder out = new StringBuilder()
+        rows.each { List<String> row ->
+            out.append(row.collect { CsvCell.quote(it) }.join(','))
             out.append('\n')
         }
 
@@ -196,25 +227,5 @@ class SamplesheetReshaper {
         }
         char next = filename.charAt(sampleId.length())
         return next == '_' || next == '.'
-    }
-
-    private static String joinPaths(List<File> files) {
-        String joined = files.collect { it.absolutePath }.join(',')
-        // Per RFC 4180, a cell that contains the separator (`,`) must be
-        // wrapped in double quotes so a CSV consumer can parse the cell
-        // back as a single value. Without the quotes, a row with two
-        // R1 lanes and two R2 lanes reads as 5 columns (sample, R1_lane1,
-        // R1_lane2, R2_lane2, R2_lane1) instead of the intended 3, and
-        // Nextflow's `splitCsv(header: true)` silently drops the extras.
-        // Single-file cells are left unquoted for readability.
-        //
-        // This matches the convention used by every nf-core pipeline's
-        // samplesheet (rnaseq, sarek, ampliseq, ...). The previous
-        // unquoted output was the well-known footgun the README's
-        // "per nf-core convention" claim was supposed to avoid.
-        if (joined.contains(',')) {
-            return '"' + joined + '"'
-        }
-        return joined
     }
 }

@@ -9,7 +9,9 @@
  * keeps the splitting logic in one place and gives both parsers
  * access to source line numbers for error messages.
  *
- * Pairs with {@link CsvLine} for the per-line data class.
+ * Pairs with {@link CsvLine} for the per-line data class and
+ * {@link CsvCell} for the cell-level quote/parse operations. The
+ * three together own the full RFC-4180 contract for the lib.
  */
 class CsvLines {
 

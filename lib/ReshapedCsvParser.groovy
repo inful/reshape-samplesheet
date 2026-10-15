@@ -7,18 +7,24 @@
  * built-in {@code splitCsv(header: true)} does not honour
  * double-quoted cells — it splits on the inner {@code ,}, leaves
  * stray quote characters in the cell values, and drops columns
- * silently. So we need a small (~50 line) RFC-4180 reader that
- * lives in the lib, is unit-tested in isolation, and is the
- * canonical implementation that the sub-workflow and every
- * downstream consumer go through.
+ * silently. So we need a small RFC-4180 reader that lives in the
+ * lib, is unit-tested in isolation, and is the canonical
+ * implementation that the sub-workflow and every downstream
+ * consumer go through.
  *
  * <h2>Scope</h2>
  * This reader is specifically for the lib's OUTPUT format
  * (header: {@code sample,fastq_1,fastq_2[,strandedness]}). It is
  * NOT a general-purpose CSV reader — for the INPUT samplesheet
- * formats (bcl2fastq V1, Local Run Manager), use
+ * formats (bcl2fastq V1, BCLConvert V2, Local Run Manager), use
  * {@link SamplesheetParser}, which handles the
  * section-header-and-multi-section structure of those formats.
+ *
+ * <h2>RFC-4180 contract</h2>
+ * The reader delegates cell-level parsing to {@link CsvCell}, which
+ * is also used (and unit-tested in isolation) by
+ * {@link SamplesheetParser} for input samplesheets. The two parsers
+ * cannot drift because they share the same primitive.
  *
  * <h2>Handling</h2>
  * <ul>
@@ -80,12 +86,12 @@ class ReshapedCsvParser {
         }
 
         // Parse every line into a list of cells, threading the
-        // 1-based source line number into parseLine so the
+        // 1-based source line number into CsvCell.parseLine so the
         // unclosed-quote error can point to the right place.
         List<List<String>> rows = []
         List<Integer> rowLineNumbers = []
         lines.each { CsvLine lineInfo ->
-            rows << parseLine(lineInfo.content, lineInfo.lineNumber)
+            rows << CsvCell.parseLine(lineInfo.content, lineInfo.lineNumber)
             rowLineNumbers << lineInfo.lineNumber
         }
 
@@ -144,71 +150,5 @@ class ReshapedCsvParser {
             ]
         }
         return records
-    }
-
-    /**
-     * Parse a single CSV line into a list of cell strings. RFC-4180
-     * aware: a {@code "} at the start of a cell opens a quoted
-     * region, a {@code ,} inside a quoted region is literal, and
-     * a doubled {@code ""} inside a quoted region is a literal
-     * quote.
-     *
-     * @param line the line text (without the trailing newline)
-     * @param lineNumber 1-based source line number, used in error
-     *                  messages so a user can find the offending
-     *                  line in the original CSV
-     */
-    private static List<String> parseLine(String line, int lineNumber) {
-        List<String> cells = []
-        StringBuilder current = new StringBuilder()
-        boolean inQuotes = false
-        boolean atCellStart = true
-        int i = 0
-        while (i < line.length()) {
-            char c = line.charAt(i)
-            if (inQuotes) {
-                if (c == '"') {
-                    // Escaped quote inside a quoted field: a
-                    // doubled "" becomes a literal ". Otherwise
-                    // this is the closing quote.
-                    if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                        current.append('"')
-                        i += 2
-                        continue
-                    }
-                    inQuotes = false
-                    i += 1
-                    continue
-                }
-                current.append(c)
-                i += 1
-            } else {
-                if (c == ',') {
-                    cells << current.toString()
-                    current = new StringBuilder()
-                    atCellStart = true
-                    i += 1
-                } else if (c == '"' && atCellStart) {
-                    // Opening quote. Quotes that appear mid-cell
-                    // (e.g. inside a path) are kept literally —
-                    // only the first character of a cell can open
-                    // a quoted region.
-                    inQuotes = true
-                    atCellStart = false
-                    i += 1
-                } else {
-                    current.append(c)
-                    atCellStart = false
-                    i += 1
-                }
-            }
-        }
-        if (inQuotes) {
-            throw new IllegalArgumentException(
-                "Unclosed quote in CSV line ${lineNumber}: ${line}"
-            )
-        }
-        cells << current.toString()
-        return cells
     }
 }

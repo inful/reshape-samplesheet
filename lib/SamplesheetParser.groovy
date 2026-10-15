@@ -2,6 +2,12 @@
  * Internal parser for bcl2fastq (V1), BCLConvert (V2), and Local Run
  * Manager Illumina samplesheets. Not part of the public API; called
  * from {@link SamplesheetReshape}.
+ *
+ * <p>Per-cell RFC-4180 parsing is delegated to {@link CsvCell#parseLine},
+ * which is also the parser used by {@link ReshapedCsvParser} for the
+ * lib's own output. The writer counterpart
+ * ({@link SamplesheetReshaper}) quotes with {@link CsvCell#quote}, so
+ * the writer and reader cannot drift.</p>
  */
 class SamplesheetParser {
 
@@ -98,7 +104,8 @@ class SamplesheetParser {
                 return []
             }
             return parseTabular(
-                parseCsvLine(lines[v1DataIdx + 1].content).collect { it.trim() },
+                CsvCell.parseLine(lines[v1DataIdx + 1].content,
+                                  lines[v1DataIdx + 1].lineNumber).collect { it.trim() },
                 lines.drop(v1DataIdx + 2).collect { it.content },
                 '[Data] section',
                 lines[v1DataIdx + 1].lineNumber,
@@ -106,7 +113,7 @@ class SamplesheetParser {
             )
         }
         return parseTabular(
-            parseCsvLine(lines[0].content).collect { it.trim() },
+            CsvCell.parseLine(lines[0].content, lines[0].lineNumber).collect { it.trim() },
             lines.drop(1).collect { it.content },
             'header row',
             lines[0].lineNumber,
@@ -140,7 +147,8 @@ class SamplesheetParser {
             return []
         }
         return parseTabular(
-            parseCsvLine(lines[dataIdx + 1].content).collect { it.trim() },
+            CsvCell.parseLine(lines[dataIdx + 1].content,
+                              lines[dataIdx + 1].lineNumber).collect { it.trim() },
             lines.drop(dataIdx + 2).collect { it.content },
             "${dataMarker} section",
             lines[dataIdx + 1].lineNumber,
@@ -204,7 +212,7 @@ class SamplesheetParser {
         List<String> rowErrors = []
         rows.eachWithIndex { String line, int i ->
             int lineNumber = headerLineNumber + 1 + i
-            List<String> cells = parseCsvLine(line)
+            List<String> cells = CsvCell.parseLine(line, lineNumber)
             if (cells.size() == header.size()) {
                 Map<String, String> record = [:]
                 header.eachWithIndex { String col, int j -> record[col] = cells[j].trim() }
@@ -229,50 +237,5 @@ class SamplesheetParser {
             )
         }
         return records
-    }
-
-    /**
-     * Minimal RFC-4180-ish CSV line parser:
-     *  - supports double-quoted fields
-     *  - supports escaped quotes ("") inside quoted fields
-     *  - supports commas inside quoted fields
-     *  - called per logical line (already split quote-aware)
-     */
-    private static List<String> parseCsvLine(String line) {
-        List<String> cells = []
-        StringBuilder current = new StringBuilder()
-        boolean inQuotes = false
-        int i = 0
-        while (i < line.length()) {
-            char c = line.charAt(i)
-            if (inQuotes) {
-                if (c == '"') {
-                    if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                        current.append('"')
-                        i += 2
-                        continue
-                    }
-                    inQuotes = false
-                    i++
-                    continue
-                }
-                current.append(c)
-                i++
-            } else {
-                if (c == ',') {
-                    cells << current.toString()
-                    current = new StringBuilder()
-                    i++
-                } else if (c == '"' && current.length() == 0) {
-                    inQuotes = true
-                    i++
-                } else {
-                    current.append(c)
-                    i++
-                }
-            }
-        }
-        cells << current.toString()
-        return cells
     }
 }
