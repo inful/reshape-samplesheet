@@ -38,6 +38,24 @@ def requireParam(name, value) {
     }
 }
 
+// Helper: coerce a CLI param to Boolean. Mirrors boolParam in
+// ../../main.nf, duplicated for the same reason as requireParam above.
+// Kept in sync deliberately: this copy existed in the older inline form
+// while the root entry point had already moved to a shared helper.
+def boolParam(name, value) {
+    if (value == null || value == '') {
+        return false
+    }
+    if (value instanceof Boolean) {
+        return value
+    }
+    def s = value.toString().toLowerCase()
+    if (s !in ['true', 'false']) {
+        error "--${name} must be 'true' or 'false', got: '${value}'"
+    }
+    return (s == 'true')
+}
+
 workflow {
 
     // Fail fast on missing required parameters with a clear message.
@@ -47,11 +65,7 @@ workflow {
     requireParam('recursive',   params.recursive)
 
     // Nextflow passes CLI params as Strings, so coerce and validate.
-    def recursiveStr = params.recursive.toString().toLowerCase()
-    if (recursiveStr !in ['true', 'false']) {
-        error "--recursive must be 'true' or 'false', got: '${params.recursive}'"
-    }
-    def recursive = (recursiveStr == 'true')
+    def recursive = boolParam('recursive', params.recursive)
 
     // FASTQC doesn't read strandedness, so the 3-column CSV is
     // what we want here.
@@ -66,14 +80,11 @@ workflow {
           recursive   : ${recursive}
     """.stripIndent()
 
-    // Pre-flight check (synchronous — fails before any process submits).
-    // Same pattern as the root main.nf: catch bad input early so the
-    // user sees a clear error before compute is billed.
-    SamplesheetReshape.validate(
-        file(params.samplesheet),
-        file(params.fastq_dir),
-        opts
-    )
+    // No in-process pre-flight here, matching the root main.nf: the
+    // SAMPLESHEET_VALIDATE module inside RESHAPE_SAMPLESHEET does the
+    // same work, and SAMPLESHEET_RESHAPE stages its output so a failed
+    // run cannot destroy the previous CSV. Running the matching twice
+    // per invocation bought nothing.
 
     // Convert each scalar param into a single-element channel so
     // POC_RESHAPE_AND_FASTQC (a take/main/emit sub-workflow) can be

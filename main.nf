@@ -139,17 +139,22 @@ workflow {
             opts.strandedness = strandedness
         }
 
-        // Pre-flight check: run every validation the sub-workflow would,
-        // before any compute is submitted. If anything is wrong, this
-        // throws IllegalArgumentException with a clear, complete error
-        // message (e.g. "3 samples have no matching fastq files: A, B, C").
-        // This is the single most important line in the whole pipeline
-        // for protecting the user from silent partial-output runs.
-        SamplesheetReshape.validate(
-            file(params.samplesheet),
-            file(params.fastq_dir),
-            opts
-        )
+        // No in-process pre-flight here on purpose. An earlier version called
+        // SamplesheetReshape.validate() before the sub-workflow, which
+        // ran the full sample-to-fastq matching twice per invocation (the
+        // sub-workflow's SAMPLESHEET_VALIDATE module does the same work).
+        //
+        // The reason it looked load-bearing was data loss, and that was
+        // a bug in the module rather than a reason to duplicate the
+        // check: the module used to `rm` the previous CSV before
+        // validating, so a failed run destroyed the last good result.
+        // SAMPLESHEET_RESHAPE now stages into a workdir-local directory
+        // and only places the file once the reshape has succeeded, so a
+        // failed run leaves the previous CSV intact on its own.
+        //
+        // If you re-add an in-process pre-flight, keep it for the error
+        // message only — it is not needed for correctness, and the
+        // module's error already lists every problem at once.
 
         RESHAPE_SAMPLESHEET(
             file(params.samplesheet),
