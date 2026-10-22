@@ -6,6 +6,14 @@
 # the pipeline entry point AND the modules/nf-core/ subtree and fails
 # with "Repository type could not be established".
 #
+# NOTE for anyone vendoring this into their own pipeline: `nf-core
+# subworkflows install` copies only subworkflows/ and modules/, but the
+# Groovy implementation lives in the repo-root lib/ and both the
+# sub-workflow and the modules load it from there. Copy lib/ too, or
+# the pipeline fails at compile time with
+# "`SamplesheetReshape` is not defined". See the README section
+# "Using the sub-workflow from your own pipeline".
+#
 # Schema: https://nf-co.re/docs/nf-core-tools/api_reference
 nf_core_version: "4.1.0"
 

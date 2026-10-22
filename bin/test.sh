@@ -212,18 +212,27 @@ run_output_path_smoke() {
         fail=1
     fi
 
-    # A failed run must NOT destroy the previous good CSV. `|| true`
-    # because this run is expected to fail, and the script runs under
-    # `set -e`.
+    # A failed run must NOT destroy the previous good CSV.
+    #
+    # Compares against a copy of the bytes rather than a checksum: the
+    # checksum tools differ between macOS and Linux (`md5 -q` is BSD
+    # only, `md5sum` is GNU, and they spell the flag differently), so a
+    # hash here reports a false failure on ubuntu-latest CI. `cmp` is
+    # POSIX and behaves the same on both.
+    #
+    # `|| true` on the run because it is expected to fail, and the
+    # script runs under `set -e`.
     local good="$root/nested/deep/illumina_bcl2fastq.nfcore.csv"
-    local before after
-    before=$(md5 -q "$good" 2>/dev/null || echo none)
+    local copy="$root/expected.csv"
+    cp "$good" "$copy"
     local emptydir="$root/empty_fastqs"; mkdir -p "$emptydir"
     nextflow -q run main.nf --samplesheet "$sheet" --fastq_dir "$emptydir" \
         --outdir "$root/nested/deep" --recursive false >/dev/null 2>&1 || true
-    after=$(md5 -q "$good" 2>/dev/null || echo GONE)
-    if [[ "$before" != "$after" ]]; then
-        echo "FAIL: a failed run destroyed the previous CSV (before=$before after=$after)" >&2
+    if [[ ! -s "$good" ]]; then
+        echo "FAIL: a failed run left no CSV behind (it was destroyed)" >&2
+        fail=1
+    elif ! cmp -s "$good" "$copy"; then
+        echo "FAIL: a failed run modified the previous CSV" >&2
         fail=1
     fi
 

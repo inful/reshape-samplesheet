@@ -33,10 +33,13 @@ Three things this POC validates:
    smoke test asserts that `sample_A`'s fastqc invocation receives
    BOTH lanes (verified by inspecting the `printf` line in the
    process's `.command.sh`).
-3. **The pre-flight validation actually fires.** `SamplesheetReshape.validate()`
-   runs synchronously before any process is submitted, so a
-   malformed samplesheet or a missing fastq fails with a complete
-   error message before the user pays for any compute.
+3. **The pre-flight validation actually fires.** The
+   `SAMPLESHEET_VALIDATE` step inside `RESHAPE_SAMPLESHEET` runs every
+   check `reshape()` would, so a malformed samplesheet or a missing
+   fastq fails with one complete error message before any CSV is
+   written. An earlier version of this POC called
+   `SamplesheetReshape.validate()` inline as well; that was a duplicate
+   of the same work and was removed.
 
 ## Quick start
 
@@ -94,11 +97,11 @@ convention for include-able sub-workflows:
   references (`script "../poc.nf"`, `workflow "POC_RESHAPE_AND_FASTQC"`)
   and what another pipeline would `include` to use the POC
   composition in their own context.
-- **`main.nf`** is a thin CLI wrapper that reads params, calls
-  `SamplesheetReshape.validate(...)` for the synchronous pre-flight
-  check, and translates each scalar param into a single-element
+- **`main.nf`** is a thin CLI wrapper that reads and validates the
+  params, then translates each scalar param into a single-element
   channel so the named sub-workflow can be invoked with the
-  standard channel pattern.
+  standard channel pattern. Validation of the samplesheet itself
+  happens inside the sub-workflow, in `SAMPLESHEET_VALIDATE`.
 
 ## The three-line benefit
 

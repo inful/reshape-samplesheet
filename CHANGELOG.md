@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **My own regression test broke CI on Linux.** `run_output_path_smoke`
+  used `md5 -q` to compare the CSV across a failed run. `md5 -q` is the
+  BSD/macOS spelling; GNU coreutils ships `md5sum`, which has no `-q`
+  flag. The `|| echo none` fallback turned the missing tool into a fake
+  failure (`before=none after=GONE`), so `bin/test.sh --smoke` would
+  have reported FAIL and turned the whole `test` job red on every push
+  to `ubuntu-latest`. It now compares the bytes with POSIX `cmp`.
+- **The CSV was written non-atomically.** `File.bytes = ...` truncates
+  the destination before writing, so a job killed mid-write (scheduler
+  timeout, full disk, node reboot) left a partial CSV where a good one
+  used to be. The staging fix protected against validation failure but
+  not against interruption. Both copies now go to a `.tmp` name and
+  are renamed into place, which is atomic within a directory.
+- **`versions.yml` was published into the user's `--outdir`.** The
+  `publishDir` directive added for the not-yet-existing-outdir fix
+  publishes every output. It is now scoped with
+  `pattern: "*.nfcore.csv"`.
+- **The modules failed cryptically when `lib/` did not travel with
+  them** — a bare `GroovyClassNotFoundException`. They now check for
+  the library up front and print where it was looked for and what to
+  copy.
+- **Stale documentation after the pre-flight removal.** `README.md`,
+  `examples/poc/README.md` and a comment in `main.nf` all still
+  described an in-process `SamplesheetReshape.validate()` call that no
+  longer exists.
+
+### Added
+- `subworkflows/nf-core/validate_samplesheet/tests/nextflow.config`,
+  mirroring the reshape suite's. Neither root `nextflow.config` nor
+  the POC config sets `enable_docker` today, so that suite passed by
+  luck; the day someone enables Docker at the root, it would quietly
+  start pulling `groovy:4.0-jdk21` while the reshape suite kept using
+  system Groovy.
+- Vendoring note in the README and in `.nf-core.yml`: all the logic
+  lives in the repo-root `lib/`, so `nf-core subworkflows install`
+  alone is not sufficient. `lib/` has to come along, or the pipeline
+  fails at Nextflow compile time with `` `SamplesheetReshape` is not
+  defined ``.
+
+### Changed
 - **`--outdir` never received the CSV.** `SAMPLESHEET_RESHAPE` wrote
   the file into the staged `output_dir` and then `mv`'d it into the
   task workdir so Nextflow's output glob could capture it. Nothing
@@ -66,6 +106,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs the whole reshape and discards the output.
 
 ### Known limitations
+- **`samplesheet_validate` and `samplesheet_validate_bcl2fastq` are
+  still near-duplicates** (38 substantive shared lines). Merging them
+  needs a process input that is absent for the pre-bcl2fastq case,
+  which on Nextflow 26.10.3 means `path x, optional: true` — and that
+  fails to parse (`No such variable: optional`). A `Channel.value(null)`
+  placeholder fails too. The merge was attempted and reverted; until a
+  supported optional-input syntax exists, changes to one must be made
+  to the other.
 - The O(samples x fastq_files) matching and the O(n^2) index-pair
   check were measured rather than assumed: 1,000 samples against
   4,000 fastqs takes 1.24 s, and 2,000 samples takes 1.42 s for the

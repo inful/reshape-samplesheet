@@ -73,11 +73,10 @@ workflow {
     // lengths, unique combinations) and stops.
     //
     // Runs in-process via the lib rather than through the
-    // validate_samplesheet sub-workflow: this is a gate, not a unit of
-    // work, and main.nf already pre-flights in-process on the reshape
-    // path below (see the SamplesheetReshape.validate call). Use the
+    // validate_samplesheet sub-workflow: this is a CLI gate, not a
+    // unit of work, and it needs no channel wiring. Use the
     // sub-workflow when you want the check as a step inside a larger
-    // pipeline rather than as a CLI gate.
+    // pipeline rather than as a CLI flag.
     if (validateOnly) {
 
         def hammingAsError = boolParam(

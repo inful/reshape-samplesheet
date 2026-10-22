@@ -100,10 +100,11 @@ keep the default 3-column output, or set it to add a fourth column.
 Unless you pass `--validate-only` (below), which drops the last three
 requirements and needs only `--samplesheet`.
 
-The pipeline's `main.nf` calls `validate()` before doing anything
-expensive, so a malformed samplesheet or a missing fastq dir fails
-fast (before any compute is submitted) with a single error message
-listing all the problems at once.
+On the reshape path, a malformed samplesheet or a missing fastq dir
+fails before any CSV is written: the sub-workflow's
+`SAMPLESHEET_VALIDATE` step runs the same checks `reshape()` would and
+throws with one error message listing all the problems at once. A
+failed run leaves the previous CSV in `--outdir` untouched.
 
 ```bash
 # 3-column output (generic nf-core format)
@@ -188,6 +189,13 @@ Format is auto-detected: bcl2fastq V1 (`[Data]`), BCLConvert V2
 section markers).
 
 ## Using the sub-workflow from your own pipeline
+
+> **Copy the whole tree, not just `subworkflows/`.** All the logic
+> lives in `lib/*.groovy` at the repo root, and both the sub-workflow
+> and the modules load it from there. Vendor `lib/`, `modules/` and
+> `subworkflows/` together (a plain copy of this repository, or a git
+> subtree). If `lib/` is missing, Nextflow fails at compile time with
+> `` `SamplesheetReshape` is not defined ``.
 
 The sub-workflow emits two views of the same data: a `csv` channel
 (the canonical artifact, good for inspection and external tools)

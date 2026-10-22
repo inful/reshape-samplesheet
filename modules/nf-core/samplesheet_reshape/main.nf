@@ -32,7 +32,11 @@ process SAMPLESHEET_RESHAPE {
     //
     // Disabled when unset, so a consumer including this module without
     // a params.outdir is unaffected; they get the CSV via the `csv` emit.
-    publishDir "${params.outdir}", mode: 'copy', overwrite: true, enabled: params.outdir != null
+    //
+    // Scoped to the CSV with a pattern: without it, versions.yml is
+    // published into the user's results directory too, which nothing
+    // asked for and which was not there before publishDir was added.
+    publishDir "${params.outdir}", mode: 'copy', overwrite: true, enabled: params.outdir != null, pattern: "*.nfcore.csv"
 
     input:
     path samplesheet
@@ -70,6 +74,16 @@ process SAMPLESHEET_RESHAPE {
     for f in ${projectDir}/lib/*.groovy; do
         [ -f "\$f" ] && cp "\$f" lib/
     done
+    # Actionable failure if lib/ did not travel with this component.
+    # projectDir is the *including* pipeline's root, so this fires when
+    # someone copied only modules/ across. Note that including the
+    # sub-workflow without lib/ fails earlier, at Nextflow compile time,
+    # with "`SamplesheetReshape` is not defined".
+    if [ ! -f lib/SamplesheetReshape.groovy ]; then
+        echo "ERROR: no Groovy library at ${projectDir}/lib/. Copy the whole" >&2
+        echo "       repo (lib/ + modules/ + subworkflows/), not just modules." >&2
+        exit 1
+    fi
 
     # Make sure output_dir is a writable directory. Three cases:
     #   1. output_dir doesn't exist yet — mkdir -p creates it.
@@ -130,8 +144,28 @@ process SAMPLESHEET_RESHAPE {
         // glob captures, the outDir copy is what the user asked for.
         // Moving instead of copying left --outdir empty with the CSV
         // stranded in work/<hash>/.
-        new File(written.name).bytes = written.bytes
-        new File(outDir, written.name).bytes = written.bytes
+        //
+        // Each copy goes to a .tmp name and is then renamed into
+        // place. Writing straight to the destination truncates it
+        // first, so a job killed mid-write (scheduler timeout, full
+        // disk, node reboot) left a partial CSV where a good one used
+        // to be. rename() within one directory is atomic, so the
+        // destination is either the old file or the new one.
+        def place = { File dest ->
+            // absoluteFile.parentFile, not parentFile: the workdir copy
+            // is a bare basename so parentFile is null, and
+            // new File(null, String) is an ambiguous overload.
+            def tmp = new File(dest.absoluteFile.parentFile, dest.name + '.tmp')
+            tmp.bytes = written.bytes
+            if (!tmp.renameTo(dest)) {
+                // Cross-device or otherwise unrenameable: fall back to
+                // a plain copy rather than losing the result.
+                dest.bytes = written.bytes
+                tmp.delete()
+            }
+        }
+        place(new File(written.name))
+        place(new File(outDir, written.name))
     } finally {
         stageDir.deleteDir()
     }
