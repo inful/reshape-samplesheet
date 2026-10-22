@@ -1,3 +1,11 @@
+// POSIX-safe shell quoting for a value interpolated into the script:
+// block. Defined at script scope rather than inside the script: block
+// because Nextflow's DSL parser does not allow calling a closure defined
+// there. See the sibling samplesheet_reshape module for the full note.
+def shQuote(String s) {
+    return "'" + s.replace("'", "'\"'\"'") + "'"
+}
+
 process SAMPLESHEET_VALIDATE_BCL2FASTQ {
 
     tag { "${samplesheet}" }
@@ -28,6 +36,8 @@ process SAMPLESHEET_VALIDATE_BCL2FASTQ {
     // exist, so the only thing it can check is the samplesheet itself.
     // See the sibling samplesheet_validate module for the
     // *post*-bcl2fastq shape (samplesheet + fastq_dir).
+    def samplesheet_q = shQuote(samplesheet.toString())
+    def opts_json_q   = shQuote(opts_json)
     """
     # Bring SamplesheetReshape + helpers into the task workdir.
     # projectDir is the directory of the workflow that includes us
@@ -49,11 +59,11 @@ process SAMPLESHEET_VALIDATE_BCL2FASTQ {
     # artifact to keep.
     cat > validate_bcl2fastq.groovy << 'GROOVY'
     SamplesheetReshape.validateBcl2fastq(
-        new File('${samplesheet}'),
-        new groovy.json.JsonSlurper().parseText('${opts_json}')
+        new File(args[0]),
+        new groovy.json.JsonSlurper().parseText(args[1])
     )
     GROOVY
-    groovy -cp lib validate_bcl2fastq.groovy
+    groovy -cp lib validate_bcl2fastq.groovy ${samplesheet_q} ${opts_json_q}
 
     cat << END_VERSIONS > versions.yml
     "${task.process}":

@@ -99,8 +99,12 @@ class SamplesheetReshape {
     }
 
     static void validate(File samplesheet, File fastqDir, Map opts) {
-        // Run reshape but discard the output. If reshape throws, so
-        // does this; if it returns successfully, all checks passed.
+        // Runs the full reshape and discards the output. So this is not
+        // a cheaper check than reshape() — it costs the same, including
+        // building the output CSV text. It exists so callers can fail
+        // fast before submitting compute; it does not exist to be fast.
+        // If reshape throws, so does this; if it returns, all checks
+        // passed.
         reshape(samplesheet, fastqDir, opts)
     }
 
