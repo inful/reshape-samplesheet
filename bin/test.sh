@@ -129,8 +129,15 @@ EOF
         bin/make_test_fastqs.sh tests/fastqs
     fi
     echo "==> Running nf-test suite"
-    nf-test test \
-        subworkflows/nf-core/reshape_samplesheet/tests/main.nf.test
+    # One invocation per sub-workflow suite. nf-test 0.9.x does not
+    # accept multiple paths in a single `nf-test test` call, and the
+    # two suites are independent (different inputs, different emits),
+    # so running them separately keeps a failure in one from masking
+    # the other's result.
+    for suite in subworkflows/nf-core/*/tests/main.nf.test; do
+        echo "==> $suite"
+        nf-test test "$suite"
+    done
 }
 
 run_smoke() {
@@ -171,6 +178,44 @@ EOF
         exit 1
     fi
     echo "==> Smoke test passed: $csv_path"
+}
+
+# Pre-bcl2fastq gate coverage for the --validate-only path in main.nf.
+# Deliberately passes NO --fastq_dir / --outdir / --recursive: the whole
+# point is that those requirements are skipped. Runs both flag spellings
+# (Nextflow normalises dashed -> params.validateOnly and underscored ->
+# params.validate_only, so both must work) and asserts the gate both
+# passes a good sheet and fails a bad one.
+run_validate_only_smoke() {
+    echo "==> Running validate-only smoke (nextflow run main.nf --validate-only)"
+    local sheet='tests/data/illumina_bcl2fastq.csv'
+
+    # Dashed spelling.
+    if ! nextflow -q run main.nf --samplesheet "$sheet" --validate-only >/dev/null 2>&1; then
+        echo "FAIL: --validate-only rejected a well-formed samplesheet" >&2
+        nextflow -q run main.nf --samplesheet "$sheet" --validate-only 2>&1 | tail -20 >&2
+        return 1
+    fi
+    # Underscored spelling must behave identically.
+    if ! nextflow -q run main.nf --samplesheet "$sheet" --validate_only >/dev/null 2>&1; then
+        echo "FAIL: --validate_only (underscored) rejected a well-formed samplesheet" >&2
+        return 1
+    fi
+    # A bad samplesheet must fail the run and name the offending sample.
+    local out
+    out=$(nextflow -q run main.nf \
+        --samplesheet tests/data/illumina_bcl2fastq_bad_index.csv \
+        --validate-only 2>&1 || true)
+    if ! grep -q 'ATXGACGT' <<<"$out"; then
+        echo "FAIL: --validate-only did not reject the bad-index samplesheet" >&2
+        echo "$out" | tail -20 >&2
+        return 1
+    fi
+    if ! grep -q 'Duplicate index combination' <<<"$out"; then
+        echo "FAIL: --validate-only did not report the duplicate I7+I5 combination" >&2
+        return 1
+    fi
+    echo "==> Validate-only smoke test passed"
 }
 
 # POC-specific helpers ---------------------------------------------------------
@@ -301,6 +346,7 @@ case "$mode" in
     smoke)
         run_unit
         run_smoke
+        run_validate_only_smoke
         ;;
     poc-smoke)
         # End-to-end smoke: real fastqc against the test fixtures.

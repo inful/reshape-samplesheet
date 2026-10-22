@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--validate-only` flag on `main.nf`** — the pre-bcl2fastq gate is
+  now reachable from the CLI, not just the sub-workflow. When set,
+  only `--samplesheet` is required: the `--fastq_dir`, `--outdir`, and
+  `--recursive` requirements are skipped and the run performs the
+  bcl2fastq structural checks in-process, then stops. Companion flag
+  `--hamming-distance-as-error` promotes Hamming-distance index
+  violations from warning to error.
+  ```bash
+  nextflow run main.nf --samplesheet SampleSheet.csv --validate-only
+  ```
+  Both flags accept either spelling (`--validate-only` /
+  `--validate_only`) because Nextflow normalises CLI param names
+  asymmetrically — dashed flags arrive camelCased as
+  `params.validateOnly`, underscored flags arrive as
+  `params.validate_only`. Supporting only one would mean a caller who
+  guessed the other spelling silently falls through to the reshape
+  path and gets a confusing `Missing required parameter: --fastq_dir`.
+- New `bin/test.sh` coverage: a `run_validate_only_smoke` step, wired
+  into `--smoke` mode, that asserts both flag spellings accept a good
+  samplesheet and that a bad one fails naming both the invalid I7
+  (`ATXGACGT`) and the duplicate I7+I5 combination.
+
+### Changed
+- `nextflow.config` now **declares** the two optional flags with an
+  explicit `null` (in both spellings) instead of leaving them
+  undefined. A declaration is not a default — an omitted flag still
+  reads as null and `boolParam` still returns false — but it stops
+  Nextflow printing a `WARN: access to undefined parameter` line on
+  every run.
 - **New `validate_samplesheet` sub-workflow** — pre-demultiplexing
   validation of an Illumina samplesheet. Takes **no `fastq_dir`**, so
   it works before bcl2fastq/bclconvert has produced anything, which

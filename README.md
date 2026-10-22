@@ -97,6 +97,10 @@ required; a bare `nextflow run main.nf` fails loudly with a clear
 message. `--strandedness` is optional — omit it to keep the default
 3-column output, or set it to add a fourth column.
 
+Add `--validate-only` when you have not run bcl2fastq/bclconvert yet:
+only `--samplesheet` is then required (see [Validating before you run
+bcl2fastq / bclconvert](#validating-before-you-run-bcl2fastq--bclconvert)).
+
 The pipeline's `main.nf` calls `validate()` before doing anything
 expensive, so a malformed samplesheet or a missing fastq dir fails
 fast (before any compute is submitted) with a single error message
@@ -122,9 +126,30 @@ nextflow run main.nf \
 ## Validating before you run bcl2fastq / bclconvert
 
 `--fastq_dir` is required by `main.nf` because reshaping needs the
-fastqs to already exist. But if you have **not** demultiplexed yet, use
-the `validate_samplesheet` sub-workflow instead — it takes no
-`fastq_dir` at all and checks only the samplesheet:
+fastqs to already exist. If you have **not** demultiplexed yet, pass
+`--validate-only` and `main.nf` will skip the `--fastq_dir`,
+`--outdir`, and `--recursive` requirements entirely:
+
+```bash
+# Pre-bcl2fastq gate. Only --samplesheet is required.
+nextflow run main.nf \
+    --samplesheet /path/to/SampleSheet.csv \
+    --validate-only
+
+# Strict mode: indices that are close (Hamming distance < 2) become fatal
+nextflow run main.nf \
+    --samplesheet /path/to/SampleSheet.csv \
+    --validate-only \
+    --hamming-distance-as-error
+```
+
+Both flags accept either spelling (`--validate-only` /
+`--validate_only`) because Nextflow normalises CLI param names
+asymmetrically: dashed flags arrive camelCased, underscored flags
+arrive as-is.
+
+The same check is available as a step inside a larger pipeline via the
+`validate_samplesheet` sub-workflow, which takes no `fastq_dir` at all:
 
 ```groovy
 include { VALIDATE_SAMPLESHEET } from './subworkflows/nf-core/validate_samplesheet/main.nf'
