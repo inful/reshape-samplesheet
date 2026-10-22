@@ -92,14 +92,13 @@ it produces:
 
 ## Quick start
 
-`--samplesheet`, `--fastq_dir`, `--outdir`, and `--recursive` are
-required; a bare `nextflow run main.nf` fails loudly with a clear
-message. `--strandedness` is optional — omit it to keep the default
-3-column output, or set it to add a fourth column.
+On the reshape path, `--samplesheet`, `--fastq_dir`, `--outdir`, and
+`--recursive` are all required; a bare `nextflow run main.nf` fails
+loudly with a clear message. `--strandedness` is optional — omit it to
+keep the default 3-column output, or set it to add a fourth column.
 
-Add `--validate-only` when you have not run bcl2fastq/bclconvert yet:
-only `--samplesheet` is then required (see [Validating before you run
-bcl2fastq / bclconvert](#validating-before-you-run-bcl2fastq--bclconvert)).
+Unless you pass `--validate-only` (below), which drops the last three
+requirements and needs only `--samplesheet`.
 
 The pipeline's `main.nf` calls `validate()` before doing anything
 expensive, so a malformed samplesheet or a missing fastq dir fails

@@ -7,8 +7,8 @@ security fixes. Older versions are not patched.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | ✅                 |
-| < 0.1.0 | ❌                 |
+| 0.4.x   | ✅                 |
+| < 0.4.0 | ❌                 |
 
 ## Reporting a Vulnerability
 

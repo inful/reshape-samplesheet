@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`--outdir` never received the CSV.** `SAMPLESHEET_RESHAPE` wrote
+  the file into the staged `output_dir` and then `mv`'d it into the
+  task workdir so Nextflow's output glob could capture it. Nothing
+  published it back, so the user's chosen directory stayed empty and
+  the CSV was stranded in `work/<hash>/`. The script now copies rather
+  than moves, and a `publishDir` directive publishes to
+  `params.outdir` — which is also what makes a **not-yet-existing**
+  `--outdir` work, since the `output_dir` input is staged as a broken
+  symlink in that case and the script's `mkdir` created a workdir-local
+  directory instead. The existing smoke test did not catch this
+  because it only asserted on the workdir path echoed in the log.
+- **A failed run destroyed the previous good CSV.** The script deleted
+  the existing CSV before validating, so a run that then threw (e.g.
+  a `--fastq_dir` with no matching fastqs) left the user with no
+  output at all. The reshape now stages into a workdir-local directory
+  and only places the file after it succeeds. Regression-tested by
+  `run_output_path_smoke` in `bin/test.sh --smoke`.
+- **The output CSV was written in the platform's default character
+  encoding** while the reader used UTF-8 explicitly, so a non-ASCII
+  sample name was silently destroyed on any JVM not defaulting to
+  UTF-8 (older Docker images, `LANG=C` containers). Verified: with
+  `-Dfile.encoding=ISO-8859-1`, `sämple_X` previously came back as
+  `s?mple_X`. Now written with `setText(..., 'UTF-8')`, with a unit
+  test that fails if the default charset is used again.
+- **Any apostrophe in a path broke the reshape job.** The module
+  interpolated user paths straight into single-quoted bash, so
+  `--outdir "/tmp/O'Brien_out"` or a samplesheet named
+  `O'Brien_sheet.csv` produced `syntax error near unexpected token
+  ')'`. All three modules now shell-quote every interpolated value
+  (POSIX-safe: wrap in single quotes, escape embedded apostrophes)
+  and pass paths to the Groovy entry point as command-line arguments
+  rather than pasting them in as string literals, which also fixes the
+  Groovy-side escaping.
+- **An unreadable `fastq_dir` reported "contains no fastq files"**
+  instead of the real cause. It now says the directory is not readable.
+
+### Changed
+- **Removed the duplicate in-process pre-flight** in `main.nf` and
+  `examples/poc/main.nf`. Both called `SamplesheetReshape.validate()`
+  before invoking the sub-workflow, whose `SAMPLESHEET_VALIDATE`
+  module does the same work — so the full sample-to-fastq matching ran
+  twice per invocation. This was only safe to remove *after* fixing
+  the data-loss bug above, which is what the extra copy had been
+  masking.
+- **`examples/poc/bin/setup.sh` now always re-copies `lib/`.** It
+  previously skipped the copy when the destination existed, so the POC
+  silently ran against a stale snapshot: the staged copy was missing
+  `lib/CsvCell.groovy` entirely and had four divergent files, meaning
+  the POC proved nothing about the current library.
+- `SECURITY.md` support table updated to `0.4.x` / `< 0.4.0`. It still
+  listed `0.1.x` as supported, contradicting the sentence above it and
+  having never been updated for 0.2.x, 0.3.x or 0.4.0.
+- `examples/poc/main.nf` now uses the same `boolParam` coercion helper
+  as the root entry point instead of its own inline copy.
+- Documented that `validate()` is not cheaper than `reshape()` — it
+  runs the whole reshape and discards the output.
+
+### Known limitations
+- The O(samples x fastq_files) matching and the O(n^2) index-pair
+  check were measured rather than assumed: 1,000 samples against
+  4,000 fastqs takes 1.24 s, and 2,000 samples takes 1.42 s for the
+  index check alone. Acceptable at the expected load (hundreds to low
+  thousands of samples); only worth optimising if a much larger run is
+  reported.
+- `validate_samplesheet` still lists one component in its `meta.yml`.
+  nf-core's real `subworkflows lint` requires ≥2 modules per
+  sub-workflow; the repo's CI check does not enforce it.
+
 ## [0.4.0] - 2026-10-22
 
 Minor release. Two `feat` commits since 0.3.1 add public surface — a
