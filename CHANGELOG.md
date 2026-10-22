@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-22
+
+Minor release. Two `feat` commits since 0.3.1 add public surface — a
+new sub-workflow and a new CLI flag — so this is a minor bump per
+SemVer. No breaking changes: every change is additive or a bug fix.
+
+The headline is that `--fastq_dir` is no longer a hard requirement for
+the pre-demultiplexing use case. Previously the only way to check that
+an Illumina samplesheet is demultiplexable was to drop into Groovy,
+because both `main.nf` and the `reshape_samplesheet` sub-workflow
+unconditionally required a directory of fastqs that do not exist until
+after bcl2fastq has run.
+
 ### Added
 - **`--validate-only` flag on `main.nf`** — the pre-bcl2fastq gate is
   now reachable from the CLI, not just the sub-workflow. When set,
@@ -31,12 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ATXGACGT`) and the duplicate I7+I5 combination.
 
 ### Changed
-- `nextflow.config` now **declares** the two optional flags with an
-  explicit `null` (in both spellings) instead of leaving them
-  undefined. A declaration is not a default — an omitted flag still
-  reads as null and `boolParam` still returns false — but it stops
-  Nextflow printing a `WARN: access to undefined parameter` line on
-  every run.
 - **New `validate_samplesheet` sub-workflow** — pre-demultiplexing
   validation of an Illumina samplesheet. Takes **no `fastq_dir`**, so
   it works before bcl2fastq/bclconvert has produced anything, which
@@ -53,25 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SamplesheetReshape.validateBcl2fastq()`, the lib entry point that
   already existed for this exact use case but was only reachable by
   dropping into Groovy.
-- Two new test fixtures: `tests/data/illumina_bcl2fastq_bad_index.csv`
-  (bad I7 character + duplicate I7+I5 combination in one file) and
-  `tests/data/illumina_hamming_1base.csv` (I7 pair exactly 1 base
-  apart) — used to cover both the default-warning and the
-  opt-in-error Hamming modes end-to-end.
-- 7 new nf-test cases in
-  `subworkflows/nf-core/validate_samplesheet/tests/main.nf.test`
-  covering V1/V2/LRM happy paths, the multi-issue failure case, both
-  Hamming modes, and the required stub test.
-
-### Known limitations
-- `validate_samplesheet` lists **one** component in its `meta.yml`.
-  nf-core's real `subworkflows lint` requires ≥2 modules per
-  sub-workflow. The repo's CI structural check does not enforce this
-  (it counts every list item in the file, not just `components:`), so
-  CI is green — but submission to nf-core/modules will need the
-  sub-workflow split or a second module added.
-
-### Changed
 - **CSV cell quoting/escaping consolidated in a shared `lib/CsvCell.groovy`**.
   Three sites — input parsing (`SamplesheetParser`), output parsing
   (`ReshapedCsvParser`), and output writing (`SamplesheetReshaper`) —
@@ -80,9 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `parseCsvLine` had duplicated cell-handling logic that drifted
   twice in the 0.3.0 release (multi-line cells, multi-value cells).
   The new `CsvCell.quote` and `CsvCell.parseLine` are the single
-  source of truth and are tested in isolation. 24 new tests in
-  `tests/test_csv_cell.groovy` cover happy path, edge cases
-  (embedded `,`, `"`, `\n`, `\r`), and the round-trip property.
+  source of truth and are tested in isolation.
+- `nextflow.config` now **declares** the two optional flags with an
+  explicit `null` (in both spellings) instead of leaving them
+  undefined. A declaration is not a default — an omitted flag still
+  reads as null and `boolParam` still returns false — but it stops
+  Nextflow printing a `WARN: access to undefined parameter` line on
+  every run.
 
 ### Fixed
 - **Writer now RFC-4180-quotes every cell that needs it, including the
@@ -103,6 +95,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cells are now also quoted. (Single-path cells with no special
   character are still emitted unquoted, matching every nf-core
   pipeline's samplesheet convention.)
+- **`bin/test.sh --nf-test` now runs every sub-workflow suite.** It
+  previously hardcoded the reshape suite's path, so any other
+  sub-workflow's nf-test cases would silently never run in CI.
+
+### Known limitations
+- `validate_samplesheet` lists **one** component in its `meta.yml`.
+  nf-core's real `subworkflows lint` requires ≥2 modules per
+  sub-workflow. The repo's CI structural check does not enforce this
+  (it counts every list item in the file, not just `components:`), so
+  CI is green — but submission to nf-core/modules will need the
+  sub-workflow split or a second module added.
 
 ## [0.3.1] - 2026-10-05
 

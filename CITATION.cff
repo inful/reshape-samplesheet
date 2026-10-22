@@ -4,8 +4,8 @@ message: >-
   metadata from this file.
 type: software
 title: "reshape-samplesheet"
-version: 0.2.1
-date-released: 2026-10-03
+version: 0.4.0
+date-released: 2026-10-22
 authors:
   - family-names: Vignes
     given-names: Jone Marius
