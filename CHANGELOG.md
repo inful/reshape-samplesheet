@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-22
+
+Patch release. Five fixes, one refactor, one docs commit since
+0.4.0, no breaking changes.
+
+The headline is a **silent data-corruption bug**: a Sample_ID
+containing `_R1` or `_R2` caused its own R1 reads to be written into
+the `fastq_2` column a second time. The CSV was well-formed and the
+run exited cleanly — the wrong reads only surfaced much later, in a
+downstream analysis. If you have a sample named like
+`patient_R2_relapse` or `cohort_R1_vs_R2`, diff your results before
+and after upgrading; the output for those samples changes, because it
+is now correct.
+
+Also in this release: `--outdir` now actually receives the CSV (it did
+not in 0.3.x or 0.4.0 — the file was stranded in `work/<hash>/`), a
+failed run no longer destroys the previous good CSV, paths
+containing an apostrophe work, and the output is written as UTF-8.
+
 ### Fixed
 - **A Sample_ID containing `_R1` or `_R2` silently duplicated reads.**
   Read-direction classification regexed the whole fastq filename,
