@@ -180,6 +180,57 @@ EOF
     echo "==> Smoke test passed: $csv_path"
 }
 
+# Regression coverage for the two output-path bugs found in the audit:
+#   1. --outdir never received the CSV. The module wrote it into the
+#      staged output_dir and `mv`'d it into the workdir, and there was
+#      no publishDir, so the user's chosen directory stayed empty and
+#      the CSV was stranded in work/<hash>/.
+#   2. A failed run destroyed the previous good CSV, because the module
+#      `rm`'d it before validating.
+# Plus the shell-quoting bug: an apostrophe in a path is legal on all
+# three platforms and used to make the generated script fail to parse.
+run_output_path_smoke() {
+    local root=".test_output_paths"
+    rm -rf "$root"; mkdir -p "$root"
+    local sheet='tests/data/illumina_bcl2fastq.csv'
+    local fail=0
+
+    # A nested, not-yet-existing outdir must be created and populated.
+    nextflow -q run main.nf --samplesheet "$sheet" --fastq_dir tests/fastqs \
+        --outdir "$root/nested/deep" --recursive false >/dev/null 2>&1
+    if [[ ! -f "$root/nested/deep/illumina_bcl2fastq.nfcore.csv" ]]; then
+        echo "FAIL: --outdir did not receive the CSV (nested, pre-existing? no)" >&2
+        fail=1
+    fi
+
+    # An apostrophe in --outdir is a legal path and must work.
+    mkdir -p "$root/apos'trophe"
+    nextflow -q run main.nf --samplesheet "$sheet" --fastq_dir tests/fastqs \
+        --outdir "$root/apos'trophe" --recursive false >/dev/null 2>&1
+    if [[ ! -f "$root/apos'trophe/illumina_bcl2fastq.nfcore.csv" ]]; then
+        echo "FAIL: apostrophe in --outdir broke the run" >&2
+        fail=1
+    fi
+
+    # A failed run must NOT destroy the previous good CSV. `|| true`
+    # because this run is expected to fail, and the script runs under
+    # `set -e`.
+    local good="$root/nested/deep/illumina_bcl2fastq.nfcore.csv"
+    local before after
+    before=$(md5 -q "$good" 2>/dev/null || echo none)
+    local emptydir="$root/empty_fastqs"; mkdir -p "$emptydir"
+    nextflow -q run main.nf --samplesheet "$sheet" --fastq_dir "$emptydir" \
+        --outdir "$root/nested/deep" --recursive false >/dev/null 2>&1 || true
+    after=$(md5 -q "$good" 2>/dev/null || echo GONE)
+    if [[ "$before" != "$after" ]]; then
+        echo "FAIL: a failed run destroyed the previous CSV (before=$before after=$after)" >&2
+        fail=1
+    fi
+
+    rm -rf "$root"
+    [[ $fail -eq 0 ]] && echo "==> Output-path smoke test passed" || return 1
+}
+
 # Pre-bcl2fastq gate coverage for the --validate-only path in main.nf.
 # Deliberately passes NO --fastq_dir / --outdir / --recursive: the whole
 # point is that those requirements are skipped. Runs both flag spellings
@@ -346,6 +397,7 @@ case "$mode" in
     smoke)
         run_unit
         run_smoke
+        run_output_path_smoke
         run_validate_only_smoke
         ;;
     poc-smoke)

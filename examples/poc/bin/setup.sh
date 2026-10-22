@@ -15,8 +15,9 @@
 #      Bump NFCORE_MODULES_SHA when you want to pick up upstream
 #      changes to the cat module.
 #
-# Re-running this script is safe: both steps are skipped if the
-# destination already exists.
+# Re-running this script is safe: step 1 always re-copies lib/ from
+# the repo root (cheap, and keeps the POC honest); step 2 is skipped if
+# the clone already exists, since it is ~150 MB.
 #
 # Usage:
 #   examples/poc/bin/setup.sh
@@ -38,12 +39,17 @@ NFCORE_MODULES_SHA="6d46786420b4d7bc88eba026eb389c0c5535d120"
 
 # 1) Stage the repo-root lib/ into the POC's projectDir so Nextflow's
 # auto-classpath picks up SamplesheetReshape and friends.
-if [[ ! -d "${POC_DIR}/lib" ]]; then
-    echo "==> Copying ${REPO_ROOT}/lib → ${POC_DIR}/lib"
-    cp -R "${REPO_ROOT}/lib" "${POC_DIR}/lib"
-else
-    echo "==> lib/ already staged, skipping copy"
+#
+# Always re-copy, and remove the destination first so files deleted
+# upstream do not linger. An earlier version skipped the copy when
+# examples/poc/lib already existed, which meant the POC silently ran
+# against a stale snapshot of the library: a bug fixed in lib/ would
+# show the POC still green. A 9-file copy costs nothing.
+if [[ -d "${POC_DIR}/lib" ]]; then
+    rm -rf "${POC_DIR}/lib"
 fi
+echo "==> Copying ${REPO_ROOT}/lib → ${POC_DIR}/lib"
+cp -R "${REPO_ROOT}/lib" "${POC_DIR}/lib"
 
 # 2) Clone nf-core/modules at the pinned SHA. The full clone is fine
 # here — nf-core/modules is a few hundred MB and a sparse clone
