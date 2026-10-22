@@ -315,6 +315,35 @@ runner.test('writeReshaped creates the output dir if it does not exist', {
     }
 })
 
+runner.test('writeReshaped writes UTF-8 regardless of the platform charset', {
+    // The reader reads UTF-8 explicitly (SamplesheetParser uses
+    // getText('UTF-8')). The writer used to use plain `out.text =`,
+    // which takes the JVM's platform default charset — so on any JVM
+    // not defaulting to UTF-8 (older Docker images, LANG=C containers)
+    // a non-ASCII sample name was silently destroyed on write.
+    //
+    // Built from a codepoint so this test source stays pure ASCII and
+    // cannot itself be mangled by a non-UTF-8 compiler.
+    def id = "s" + (char) 0x00E4 + "mple_X"
+    def root = Files.createTempDirectory('reshape_utf8_').toFile()
+    new File(root, id + "_S1_L001_R1_001.fastq.gz").bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    def sheet = File.createTempFile('utf8_sheet', '.csv')
+    sheet.setText("[Data]\nSample_ID,index,index2\n${id},ATCG,GCTA\n", 'UTF-8')
+    def outDir = Files.createTempDirectory('utf8_out_').toFile()
+    try {
+        def csvFile = SamplesheetReshape.writeReshaped(outDir, sheet, root)
+        def row2 = csvFile.readLines()[1]
+        assert row2.startsWith(id),
+            "round-tripped row lost the non-ASCII sample name: '${row2}'"
+        assert SamplesheetReshape.parseReshapedCsv(csvFile)[0].meta.id == id,
+            "parseReshapedCsv must recover the exact Sample_ID"
+    } finally {
+        sheet.delete()
+        root.deleteDir()
+        outDir.deleteDir()
+    }
+})
+
 // -----------------------------------------------------------------------------
 // RFC-4180 cell quoting on output — the regression lock for the
 // pre-refactor behaviour where the writer quoted multi-value cells

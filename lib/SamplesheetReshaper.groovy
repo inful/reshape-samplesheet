@@ -50,6 +50,16 @@ class SamplesheetReshaper {
         }
         List<File> fastqFiles = collectFastqs(fastqDir, recursive)
         if (fastqDir != null && fastqFiles.isEmpty()) {
+            // Distinguish "no fastqs here" from "we could not look".
+            // On an unreadable directory listFiles() yields nothing, so
+            // the generic message below would send the user hunting for
+            // missing files when the real problem is a permission bit.
+            if (!fastqDir.canRead()) {
+                throw new IllegalArgumentException(
+                    "fastq_dir is not readable (check permissions): " +
+                    "${fastqDir.absolutePath}"
+                )
+            }
             throw new IllegalArgumentException(
                 "fastq_dir contains no .fastq/.fq(.gz) files: " +
                 "${fastqDir.absolutePath}"
@@ -156,7 +166,13 @@ class SamplesheetReshaper {
         }
         String base = samplesheet.name.replaceFirst(~/\.[^.]+$/, '')
         File out = new File(outputDir, "${base}.nfcore.csv")
-        out.text = reshapeImpl(samplesheet, fastqDir, opts)
+        // Write UTF-8 explicitly, mirroring the read side
+        // (SamplesheetParser reads with getText('UTF-8')). Plain
+        // `out.text =` uses the JVM's platform default charset, which
+        // varies by environment and silently destroys non-ASCII
+        // sample names on any JVM not defaulting to UTF-8 (older
+        // Docker images, LANG=C containers).
+        out.setText(reshapeImpl(samplesheet, fastqDir, opts), 'UTF-8')
         return out
     }
 
