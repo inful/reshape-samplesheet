@@ -169,6 +169,14 @@ nextflow_workflow {
 
         then {
             assert workflow.success
+            // The stub must produce a parseable CSV, not an empty file:
+            // the `samples` emit is built by parsing it, so a zero-byte
+            // stub silently yielded zero records and this test could not
+            // tell a working emit from a broken one.
+            assert workflow.out.samples != null
+            assert workflow.out.samples.size() == 1,
+                "stub should yield exactly 1 sample tuple, got: ${workflow.out.samples.size()}"
+            assert workflow.out.samples[0][0].id == 'stub_sample'
         }
 
         cleanup {

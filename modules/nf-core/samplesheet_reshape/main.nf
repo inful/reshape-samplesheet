@@ -186,8 +186,16 @@ process SAMPLESHEET_RESHAPE {
     stub:
     // Stub doesn't have access to variables from the main script: block,
     // so inline the regex + the version label.
+    //
+    // Writes a real header + one row, not an empty file. The
+    // sub-workflow parses this CSV to build its `samples` emit, so a
+    // zero-byte stub silently produced zero records and the stub test
+    // could not tell a working emit from a broken one.
     """
-    touch ${samplesheet.name.replaceFirst(~/\.[^.]+$/, '')}.nfcore.csv
+    cat > ${samplesheet.name.replaceFirst(~/\.[^.]+$/, '')}.nfcore.csv << 'END_CSV'
+    sample,fastq_1,fastq_2
+    stub_sample,stub_R1.fastq.gz,stub_R2.fastq.gz
+    END_CSV
     cat << END_VERSIONS > versions.yml
     "${task.process}":
         samplesheet-reshape: ${workflow.manifest.version}

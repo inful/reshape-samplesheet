@@ -101,14 +101,11 @@ class SamplesheetReshaper {
                 missingSamples << sampleId
                 return
             }
-            // Build the per-direction cells as a `,`-joined list of
-            // paths. Cell-level RFC-4180 quoting is the writer's
-            // responsibility (CsvCell.quote), not the matcher —
-            // keeps the matching logic and the serialization
-            // concern in separate functions.
-            String r1 = matches.findAll { isReadFile(it.name, 1) }
+            // The sample ID is passed to isReadFile so it can be
+            // stripped before classifying; see that method for why.
+            String r1 = matches.findAll { isReadFile(it.name, sampleId, 1) }
                                   .collect { it.absolutePath }.join(',')
-            String r2 = matches.findAll { isReadFile(it.name, 2) }
+            String r2 = matches.findAll { isReadFile(it.name, sampleId, 2) }
                                   .collect { it.absolutePath }.join(',')
             validSamples << [sampleId: sampleId, r1: r1, r2: r2]
         }
@@ -199,11 +196,37 @@ class SamplesheetReshaper {
      * (_R1_001.fastq.gz) and the simpler _R1.fastq.gz / _1.fastq.gz styles.
      * The character class `[._]` after the read digit guards against
      * false positives like _R10_ matching R1.
+     *
+     * <p>Only the part of the name <em>after</em> the Sample_ID is
+     * examined. Scanning the whole name is wrong when the Sample_ID
+     * itself contains the token: a sample called {@code case_R2_ctrl}
+     * produces {@code case_R2_ctrl_S1_L001_R1_001.fastq.gz}, whose
+     * {@code _R2_} comes from the sample name, not the read
+     * direction. That file was classified as BOTH R1 and R2, so
+     * {@code fastq_2} carried the R1 reads a second time — silent
+     * scientific corruption with a well-formed CSV and a clean exit.
+     * Stripping the prefix fixes it; I verified the normal bcl2fastq
+     * and simple {@code _R1.fastq.gz} styles still classify
+     * correctly.</p>
+     *
+     * <p>Falls back to the whole name when the file does not start
+     * with the Sample_ID, which is the {@code pattern} mode where the
+     * user supplies their own matching regex and no prefix is
+     * guaranteed.</p>
+     *
+     * @param name      the fastq filename
+     * @param sampleId  the Sample_ID the file was matched against, or
+     *                  null when there is no usable prefix
+     * @param read      1 or 2
      */
-    private static boolean isReadFile(String name, int read) {
+    private static boolean isReadFile(String name, String sampleId, int read) {
+        String tail = (sampleId != null && sampleId.length() < name.length() &&
+                       name.startsWith(sampleId))
+            ? name.substring(sampleId.length())
+            : name
         String r = String.valueOf(read)
-        return (name =~ /_R${r}[._]/) ||
-               (name =~ /_${r}[._]fastq/)
+        return (tail =~ /_R${r}[._]/) ||
+               (tail =~ /_${r}[._]fastq/)
     }
 
     /**

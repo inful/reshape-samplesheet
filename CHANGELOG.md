@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A Sample_ID containing `_R1` or `_R2` silently duplicated reads.**
+  Read-direction classification regexed the whole fastq filename,
+  sample-ID prefix included. A sample called `case_R2_ctrl` produces
+  `case_R2_ctrl_S1_L001_R1_001.fastq.gz`, whose `_R2_` comes from the
+  sample name rather than the read direction — so that file was
+  classified as **both** R1 and R2, and `fastq_2` carried the R1 reads
+  a second time. A well-formed CSV, a clean exit, wrong science.
+  Classification now looks only at the part of the name after the
+  Sample_ID. Three new tests, one confirming the `_R10` false-positive
+  guard still holds.
+- **A stray `"` in an unquoted samplesheet cell swallowed every row
+  below it, and the error named the wrong line.** `CsvLines
+  .splitLogicalLines` toggled "inside a quoted field" on every quote
+  character, so a quote in the middle of an unquoted cell opened a
+  region that ate the rest of the file. `CsvCell.parseLine` already
+  treated such a quote as a literal; the splitter now agrees — the
+  same "one RFC-4180 contract" rule applied on the reader side. A
+  sheet containing `foo"bar` used to fail with a cell-count error on
+  the wrong line; it now parses, with the quote as literal data.
+- **Error messages pointed at the wrong row across blank lines.**
+  Rows were numbered from the header, but blank lines are filtered out
+  before that, so each one shifted the count. A malformed row on line
+  5 was reported as line 4. The parser now uses the line number the
+  splitter already records on each `CsvLine`.
+- **`samplesheet_validate`'s `meta.yml` promised strandedness
+  validation that does not exist.** It claimed the value was checked
+  as "a sane strandedness label"; `--strandedness banana` passes
+  straight through, which `SamplesheetReshape`'s own docs confirm is
+  intended. Reworded to match reality.
+- **The `-stub` run produced an empty CSV**, so the sub-workflow's
+  `samples` emit was silently empty and the stub test — which asserted
+  only `workflow.success` — could not tell a working emit from a
+  broken one. The stub now writes a header plus one row, and the stub
+  test asserts on the emit.
 - **My own regression test broke CI on Linux.** `run_output_path_smoke`
   used `md5 -q` to compare the CSV across a failed run. `md5 -q` is the
   BSD/macOS spelling; GNU coreutils ships `md5sum`, which has no `-q`
@@ -84,7 +118,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An unreadable `fastq_dir` reported "contains no fastq files"**
   instead of the real cause. It now says the directory is not readable.
 
-### Changed
 - **Removed the duplicate in-process pre-flight** in `main.nf` and
   `examples/poc/main.nf`. Both called `SamplesheetReshape.validate()`
   before invoking the sub-workflow, whose `SAMPLESHEET_VALIDATE`

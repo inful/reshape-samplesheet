@@ -315,6 +315,155 @@ runner.test('writeReshaped creates the output dir if it does not exist', {
     }
 })
 
+runner.test('a stray quote in an unquoted cell does not swallow the rows below it', {
+    // CsvLines used to toggle "inside quotes" on EVERY quote character.
+    // A stray quote in an unquoted field put it into that mode and ate
+    // every following row into one logical line, which surfaced as a
+    // cell-count error on the wrong line. CsvCell.parseLine already
+    // treated a mid-cell quote as a literal; now the splitter agrees.
+    def lines = CsvLines.splitLogicalLines(
+        "[Data]\nSample_ID,index,index2\n" +
+        "sample_A,ATCGACGT,GCTAGCTA\n" +
+        "sample_B,foo\"bar,GGCTAACC\n" +
+        "sample_C,AACCGGTT,CCAACCGG\n"
+    )
+    assert lines.size() == 5,
+        "expected 5 logical lines, got ${lines.size()} — rows were swallowed: ${lines*.content}"
+    assert lines[3].content == 'sample_B,foo"bar,GGCTAACC'
+    assert lines[4].content == 'sample_C,AACCGGTT,CCAACCGG'
+})
+
+runner.test('a multi-line quoted cell is still one logical line', {
+    // The counterpart to the fix above: a genuine newline inside a
+    // quoted region must NOT split the row.
+    def lines = CsvLines.splitLogicalLines(
+        "h1,h2\n" +
+        'sample_A,"line one' + "\n" + 'line two",ATCG' + "\n" +
+        "sample_B,x,y\n"
+    )
+    assert lines.size() == 3,
+        "expected 3 logical lines, got ${lines.size()}"
+    assert lines[1].content.startsWith('sample_A,"line one')
+    assert lines[1].content.endsWith('line two",ATCG')
+})
+
+runner.test('an escaped double-quote inside a quoted cell keeps the region open', {
+    def lines = CsvLines.splitLogicalLines(
+        "h1,h2\n" +
+        'a,"say ""hi"" now",b' + "\n" +
+        "c,d,e\n"
+    )
+    assert lines.size() == 3,
+        "expected 3 logical lines, got ${lines.size()}: ${lines*.content}"
+    assert lines[1].content == 'a,"say ""hi"" now",b'
+})
+
+runner.test('error messages name the real line number across blank lines', {
+    // Blank lines are filtered before rows are parsed, so numbering
+    // rows from the header counted them. Use the splitter's own line
+    // numbers instead, or the user is pointed at the wrong row.
+    def tmp = File.createTempFile('blankline', '.csv')
+    tmp.text = '[Data]\n' +
+               'Sample_ID,index,index2\n' +
+               'sample_A,ATCG,GCTA\n' +
+               '\n' +
+               'sample_B,BROKEN\n'
+    try {
+        String msg = null
+        try {
+            SamplesheetReshape.parseSamplesheet(tmp)
+        } catch (IllegalArgumentException e) {
+            msg = e.message
+        }
+        assert msg != null, 'expected an exception for the malformed row'
+        // The malformed row is on line 5 of the file.
+        assert msg.contains('line 5'),
+            "error should name line 5 (the actual row), got: ${msg}"
+    } finally { tmp.delete() }
+})
+
+// -----------------------------------------------------------------------------
+// read-direction classification
+// -----------------------------------------------------------------------------
+// isReadFile used to scan the WHOLE filename, sample-ID prefix included.
+// A Sample_ID containing "_R1" or "_R2" therefore made its own files
+// look like both directions, and the R1 reads were silently duplicated
+// into fastq_2 — a well-formed CSV, a clean exit, wrong science.
+println "\n[read-direction classification]"
+
+runner.test('a Sample_ID containing _R2 does not duplicate R1 reads into fastq_2', {
+    def root = Files.createTempDirectory('reshape_rid_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    def id = 'case_R2_ctrl'
+    new File(root, "${id}_S1_L001_R1_001.fastq.gz").bytes = bytes
+    new File(root, "${id}_S1_L001_R2_001.fastq.gz").bytes = bytes
+    try {
+        def ss = File.createTempFile('rid_sheet', '.csv')
+        ss.setText("[Data]\nSample_ID,index,index2\n${id},ATCGACGT,GCTAGCTA\n", 'UTF-8')
+        def outDir = Files.createTempDirectory('rid_out_').toFile()
+        try {
+            def csvFile = SamplesheetReshape.writeReshaped(outDir, ss, root)
+            def records = SamplesheetReshape.parseReshapedCsv(csvFile)
+            assert records.size() == 1
+            def r = records[0]
+            assert r.fastq_1.size() == 1,
+                "expected exactly 1 R1 file, got ${r.fastq_1.size()}"
+            assert r.fastq_2.size() == 1,
+                "the R1 file was duplicated into fastq_2 (got ${r.fastq_2.size()}): ${r.fastq_2*.toString()}"
+            assert r.fastq_1[0].toString().endsWith('_R1_001.fastq.gz')
+            assert r.fastq_2[0].toString().endsWith('_R2_001.fastq.gz')
+            assert r.meta.single_end == false
+        } finally {
+            ss.delete(); outDir.deleteDir()
+        }
+    } finally { root.deleteDir() }
+})
+
+runner.test('a Sample_ID containing _R1 does not pull R2 reads into fastq_1', {
+    def root = Files.createTempDirectory('reshape_rid2_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    def id = 'cohort_R1_ctrl'
+    new File(root, "${id}_S1_L001_R1_001.fastq.gz").bytes = bytes
+    new File(root, "${id}_S1_L001_R2_001.fastq.gz").bytes = bytes
+    try {
+        def ss = File.createTempFile('rid2_sheet', '.csv')
+        ss.setText("[Data]\nSample_ID,index,index2\n${id},ATCGACGT,GCTAGCTA\n", 'UTF-8')
+        def outDir = Files.createTempDirectory('rid2_out_').toFile()
+        try {
+            def csvFile = SamplesheetReshape.writeReshaped(outDir, ss, root)
+            def records = SamplesheetReshape.parseReshapedCsv(csvFile)
+            assert records[0].fastq_1.size() == 1
+            assert records[0].fastq_2.size() == 1
+        } finally {
+            ss.delete(); outDir.deleteDir()
+        }
+    } finally { root.deleteDir() }
+})
+
+runner.test('_R10 in a filename is still not counted as R1', {
+    // The `[._]` guard after the read digit stops _R10_ matching R1.
+    // Stripping the sample-ID prefix must not weaken it.
+    def root = Files.createTempDirectory('reshape_r10_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    ['_R10_001', '_R1_001', '_R2_001'].each {
+        new File(root, "sample_A_S1_L001${it}.fastq.gz").bytes = bytes
+    }
+    try {
+        def ss = File.createTempFile('r10_sheet', '.csv')
+        ss.setText("[Data]\nSample_ID,index,index2\nsample_A,ATCGACGT,GCTAGCTA\n", 'UTF-8')
+        def outDir = Files.createTempDirectory('r10_out_').toFile()
+        try {
+            def records = SamplesheetReshape.parseReshapedCsv(
+                SamplesheetReshape.writeReshaped(outDir, ss, root))
+            assert records[0].fastq_1.size() == 1,
+                "the _R10 file must not be counted as R1, got ${records[0].fastq_1.size()}"
+            assert records[0].fastq_2.size() == 1
+        } finally {
+            ss.delete(); outDir.deleteDir()
+        }
+    } finally { root.deleteDir() }
+})
+
 runner.test('writeReshaped writes UTF-8 regardless of the platform charset', {
     // The reader reads UTF-8 explicitly (SamplesheetParser uses
     // getText('UTF-8')). The writer used to use plain `out.text =`,

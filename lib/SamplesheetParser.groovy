@@ -106,7 +106,7 @@ class SamplesheetParser {
             return parseTabular(
                 CsvCell.parseLine(lines[v1DataIdx + 1].content,
                                   lines[v1DataIdx + 1].lineNumber).collect { it.trim() },
-                lines.drop(v1DataIdx + 2).collect { it.content },
+                lines.drop(v1DataIdx + 2),
                 '[Data] section',
                 lines[v1DataIdx + 1].lineNumber,
                 file
@@ -114,7 +114,7 @@ class SamplesheetParser {
         }
         return parseTabular(
             CsvCell.parseLine(lines[0].content, lines[0].lineNumber).collect { it.trim() },
-            lines.drop(1).collect { it.content },
+            lines.drop(1),
             'header row',
             lines[0].lineNumber,
             file
@@ -149,7 +149,7 @@ class SamplesheetParser {
         return parseTabular(
             CsvCell.parseLine(lines[dataIdx + 1].content,
                               lines[dataIdx + 1].lineNumber).collect { it.trim() },
-            lines.drop(dataIdx + 2).collect { it.content },
+            lines.drop(dataIdx + 2),
             "${dataMarker} section",
             lines[dataIdx + 1].lineNumber,
             file
@@ -167,7 +167,7 @@ class SamplesheetParser {
      */
     private static List<Map<String, String>> parseTabular(
         List<String> header,
-        List<String> rows,
+        List<CsvLine> rows,
         String context,
         int headerLineNumber,
         File source
@@ -210,9 +210,13 @@ class SamplesheetParser {
         }
         List<Map<String, String>> records = []
         List<String> rowErrors = []
-        rows.eachWithIndex { String line, int i ->
-            int lineNumber = headerLineNumber + 1 + i
-            List<String> cells = CsvCell.parseLine(line, lineNumber)
+        rows.each { CsvLine row ->
+            // Use the line number the splitter recorded, not a count
+            // from the header. Blank lines are filtered out before this
+            // point, so `headerLineNumber + 1 + index` drifted by one
+            // per blank line and pointed the user at the wrong row.
+            int lineNumber = row.lineNumber
+            List<String> cells = CsvCell.parseLine(row.content, lineNumber)
             if (cells.size() == header.size()) {
                 Map<String, String> record = [:]
                 header.eachWithIndex { String col, int j -> record[col] = cells[j].trim() }

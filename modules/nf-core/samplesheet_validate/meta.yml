@@ -32,7 +32,7 @@ input:
       description: |
         Options map. Recognised keys (all optional, all forward-compatible):
         - recursive (Boolean): walk fastq_dir recursively to find fastqs in subdirectories.
-        - strandedness (String): when non-null, validate that the value is a sane strandedness label.
+        - strandedness (String): passed through to the output column unchanged. Not validated — the downstream tool is the source of truth for which labels are valid.
         - pattern (String): custom regex template for matching fastq filenames to Sample_IDs.
         - validateStructure (Boolean): also run bcl2fastq structural checks
           (unique Sample_IDs, I7/I5 index format, I7+I5 length consistency,

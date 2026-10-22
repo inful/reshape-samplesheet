@@ -39,18 +39,46 @@ class CsvLines {
         int currentLine = 1
         int startLine = 1
         boolean inQuotes = false
+        // A `"` only opens a quoted region at the START of a cell.
+        // Without this, a stray `"` in the middle of an unquoted field
+        // (a hand-edited samplesheet, an Excel export) put the splitter
+        // into "inside quotes" mode and swallowed every following row
+        // into one logical line — which then surfaced as a cell-count
+        // error on the wrong line number. This mirrors the rule
+        // CsvCell.parseLine already uses, so the two no longer disagree
+        // about what a mid-cell quote means.
+        boolean atCellStart = true
         int i = 0
         while (i < text.length()) {
             char c = text.charAt(i)
             if (c == '"') {
-                inQuotes = !inQuotes
-                current.append(c)
-                i++
+                if (inQuotes) {
+                    // A doubled "" inside a quoted region is an escaped
+                    // quote: stay in the region and keep both characters.
+                    if (i + 1 < text.length() && text.charAt(i + 1) == '"') {
+                        current.append(c).append('"')
+                        i += 2
+                        continue
+                    }
+                    inQuotes = false
+                    current.append(c)
+                    i++
+                } else if (atCellStart) {
+                    inQuotes = true
+                    atCellStart = false
+                    current.append(c)
+                    i++
+                } else {
+                    // Mid-cell quote in unquoted content: literal.
+                    current.append(c)
+                    i++
+                }
             } else if (!inQuotes && c == '\n') {
                 result << new CsvLine(current.toString(), startLine)
                 current = new StringBuilder()
                 currentLine++
                 startLine = currentLine
+                atCellStart = true
                 i++
             } else if (!inQuotes && c == '\r') {
                 result << new CsvLine(current.toString(), startLine)
@@ -63,7 +91,13 @@ class CsvLines {
                 }
                 currentLine++
                 startLine = currentLine
+                atCellStart = true
             } else {
+                if (!inQuotes && c == ',') {
+                    atCellStart = true
+                } else {
+                    atCellStart = false
+                }
                 current.append(c)
                 i++
             }
