@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **New `validate_samplesheet` sub-workflow** — pre-demultiplexing
+  validation of an Illumina samplesheet. Takes **no `fastq_dir`**, so
+  it works before bcl2fastq/bclconvert has produced anything, which
+  is the case the existing `reshape_samplesheet` sub-workflow could
+  not serve (it requires the fastqs to already be on disk). Checks
+  Sample_ID uniqueness, non-empty I7/I5 values, valid index sequences
+  (A/C/G/T/N), consistent I7/I5 lengths, and unique I7+I5
+  combinations — all collected into a single exception so the whole
+  samplesheet can be fixed in one pass. Hamming distance between
+  same-column indices is a warning by default; opt in to
+  `hammingDistanceAsError: true` to make it fatal.
+- **New `samplesheet_validate_bcl2fastq` module** — the nf-core
+  module behind the new sub-workflow. Thin wrapper around
+  `SamplesheetReshape.validateBcl2fastq()`, the lib entry point that
+  already existed for this exact use case but was only reachable by
+  dropping into Groovy.
+- Two new test fixtures: `tests/data/illumina_bcl2fastq_bad_index.csv`
+  (bad I7 character + duplicate I7+I5 combination in one file) and
+  `tests/data/illumina_hamming_1base.csv` (I7 pair exactly 1 base
+  apart) — used to cover both the default-warning and the
+  opt-in-error Hamming modes end-to-end.
+- 7 new nf-test cases in
+  `subworkflows/nf-core/validate_samplesheet/tests/main.nf.test`
+  covering V1/V2/LRM happy paths, the multi-issue failure case, both
+  Hamming modes, and the required stub test.
+
+### Known limitations
+- `validate_samplesheet` lists **one** component in its `meta.yml`.
+  nf-core's real `subworkflows lint` requires ≥2 modules per
+  sub-workflow. The repo's CI structural check does not enforce this
+  (it counts every list item in the file, not just `components:`), so
+  CI is green — but submission to nf-core/modules will need the
+  sub-workflow split or a second module added.
+
 ### Changed
 - **CSV cell quoting/escaping consolidated in a shared `lib/CsvCell.groovy`**.
   Three sites — input parsing (`SamplesheetParser`), output parsing

@@ -1,0 +1,53 @@
+name: samplesheet_validate_bcl2fastq
+description: |
+  Pre-flight validation of an Illumina samplesheet (bcl2fastq / BCLConvert
+  / Local Run Manager format) for demultiplexability, BEFORE any fastq
+  files exist. Checks unique Sample_IDs, non-empty I7/I5 index values,
+  valid index sequences (A/C/G/T/N only), consistent I7/I5 lengths across
+  samples, and unique I7+I5 index combinations. Throws
+  IllegalArgumentException with the complete list of problems if any
+  check fails, so the run can be aborted before bcl2fastq/bclconvert is
+  submitted and hours of demultiplexing compute are burned.
+
+  Hamming distance between same-column indices is reported as a WARNING
+  by default (printed to stderr, run continues) because a distance of 1
+  is a soft risk that some workflows (e.g. NovaSeq X UMI demultiplexing)
+  deliberately accept. Pass `hammingDistanceAsError: true` in opts to
+  promote them to errors.
+
+  Thin wrapper around SamplesheetReshape.validateBcl2fastq() from the
+  parent pipeline's lib/ directory. Takes NO fastq_dir — that is the
+  difference from the sibling samplesheet_validate module, which checks
+  the post-demultiplexing state. See the validate_samplesheet
+  sub-workflow for the high-level use case.
+keywords:
+  - samplesheet
+  - illumina
+  - bcl2fastq
+  - bclconvert
+  - validation
+  - pre-flight
+  - demultiplexing
+input:
+  - samplesheet:
+      type: file
+      description: The Illumina samplesheet CSV (bcl2fastq / V2 / LRM format).
+      pattern: "*.csv"
+  - opts:
+      type: map
+      description: |
+        Options map. Recognised keys (all optional, all forward-compatible):
+        - hammingDistanceAsError (Boolean, default false): when true, indices
+          whose pairwise Hamming distance is below 2 are reported as errors
+          (thrown, collected with the other issues) instead of warnings.
+output:
+  - versions:
+      type: file
+      description: |
+        File containing tool versions.
+        Structure: [ path(versions.yml) ]
+      pattern: "versions.yml"
+authors:
+  - "@inful"
+maintainers:
+  - "@inful"

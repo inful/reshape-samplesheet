@@ -1,0 +1,201 @@
+// nf-test for VALIDATE_SAMPLESHEET sub-workflow.
+//
+// Run with:
+//
+//     nf-test test subworkflows/nf-core/validate_samplesheet/tests/main.nf.test
+//
+// The test fixtures live at the project root under tests/data/ —
+// the same fixtures the bespoke Groovy unit suite (tests/*.groovy)
+// and the reshape_samplesheet nf-test suite use.
+//
+// Note on assertions: this sub-workflow has no data emit. Success IS
+// the absence of an exception — the process either completes (the
+// samplesheet is demultiplexable) or fails the task with the
+// complete problem list. So the tests assert on workflow.success /
+// workflow.failed and, for the failure cases, that the error report
+// names the specific offending sample.
+
+nextflow_workflow {
+
+    name "Test Subworkflow VALIDATE_SAMPLESHEET"
+    script "../main.nf"
+    workflow "VALIDATE_SAMPLESHEET"
+
+    tag "subworkflows"
+    tag "subworkflows_nfcore"
+    tag "subworkflows/validate_samplesheet"
+    tag "samplesheet_validate_bcl2fastq"
+
+
+    test("bcl2fastq V1 - happy path - no fastq_dir required") {
+
+        // The whole point of this sub-workflow: a samplesheet that
+        // has NOT been demultiplexed yet, validated on its own terms.
+        // No tests/fastqs is referenced anywhere in this test.
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "V1 samplesheet should pass pre-bcl2fastq validation — see .command.err for details"
+            assert workflow.out.versions != null
+            assert workflow.out.versions.size() == 1,
+                "expected exactly one versions emit, got: ${workflow.out.versions.size()}"
+            assert workflow.out.versions.first().toString().endsWith('versions.yml')
+        }
+    }
+
+
+    test("BCLConvert V2 - happy path - format auto-detected without fastqs") {
+
+        // V2 (NovaSeq X and newer) uses [BCLConvert_Data] instead of
+        // [Data]. The structural checks are identical because the
+        // per-sample row structure is the same, so the same validator
+        // applies unchanged.
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bclconvert_v2.csv')
+                input[1] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "BCLConvert V2 samplesheet should pass pre-bcl2fastq validation"
+            assert workflow.out.versions != null
+        }
+    }
+
+
+    test("Local Run Manager - happy path - no index columns to check") {
+
+        // LRM sheets have no index columns. The index checks are
+        // skipped vacuously and only Sample_ID uniqueness applies.
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_lrm.csv')
+                input[1] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "LRM samplesheet should pass pre-bcl2fastq validation"
+            assert workflow.out.versions != null
+        }
+    }
+
+
+    test("bad index - should fail and name the offending sample") {
+
+        // Fixture has two problems in one file: sample_D's I7
+        // contains an invalid character (X), and sample_B_dup reuses
+        // sample_B's I7+I5 combination. Both must surface in a single
+        // error — the all-issues-in-one-pass contract that lets a user
+        // fix the whole samplesheet in one go rather than one error
+        // per attempt.
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq_bad_index.csv')
+                input[1] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.failed,
+                "a samplesheet with a bad I7 and a duplicate I7+I5 combination must fail"
+            assert workflow.errorReport.contains('ATXGACGT'),
+                "error report should name the invalid I7 sequence"
+            assert workflow.errorReport.contains('sample_D'),
+                "error report should name the sample with the invalid index"
+            assert workflow.errorReport.contains('Duplicate index combination'),
+                "error report should call out the duplicate I7+I5 combination"
+            assert workflow.errorReport.contains('sample_B_dup'),
+                "error report should name the duplicate-combination sample"
+        }
+    }
+
+
+    test("hammingDistanceAsError - opt-in promotes close indices to a failure") {
+
+        // Indices 1 base apart are a warning by default (the run
+        // continues). With the opt-in they become an error, which is
+        // the documented escape hatch for production runs where every
+        // close-index pair is worth investigating.
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_hamming_1base.csv')
+                input[1] = [hammingDistanceAsError: true]
+                """
+            }
+        }
+
+        then {
+            assert workflow.failed,
+                "hammingDistanceAsError:true should make a 1-base-apart index pair fatal"
+            assert workflow.errorReport.contains('Hamming distance'),
+                "error report should mention the Hamming distance violation"
+        }
+    }
+
+
+    test("hammingDistanceAsError - unset leaves close indices as a warning (run succeeds)") {
+
+        // Same fixture, default opts. The run must succeed — this is
+        // the difference between the two modes and the reason the
+        // strict behaviour is opt-in rather than the default.
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_hamming_1base.csv')
+                input[1] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "close indices should be a warning, not a failure, by default"
+            assert workflow.out.versions != null
+        }
+    }
+
+
+    test("stub - happy path") {
+
+        options "-stub"
+
+        when {
+            params { }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+    }
+}

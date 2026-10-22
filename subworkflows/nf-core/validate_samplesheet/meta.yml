@@ -1,0 +1,71 @@
+name: validate_samplesheet
+description: |
+  Check that an Illumina samplesheet (bcl2fastq / BCLConvert / Local
+  Run Manager format) is demultiplexable, BEFORE running bcl2fastq or
+  bclconvert — i.e. before any fastq files exist.
+
+  This is the pre-demultiplexing counterpart to the reshape_samplesheet
+  sub-workflow, which requires the fastq output to already be on disk.
+  Use this one as a gate: it costs one quick task and can save hours of
+  demultiplexing compute on a samplesheet that would have produced
+  garbage or crashed mid-run.
+
+  Checks unique Sample_IDs, non-empty I7/I5 index values, valid index
+  sequences (A/C/G/T/N only, case-insensitive), consistent I7/I5
+  lengths across samples, and unique I7+I5 index combinations. All
+  detected issues are collected and reported in a single exception so
+  the user can fix the whole samplesheet in one pass.
+
+  Hamming distance between indices in the same column is reported as a
+  WARNING by default (printed to stderr, the run continues) because a
+  distance of 1 is a soft risk that some workflows deliberately accept
+  (e.g. NovaSeq X UMI-style demultiplexing). Pass
+  `hammingDistanceAsError: true` in the opts map to make it fatal.
+
+  Takes no fastq_dir — there is nothing to match against yet.
+
+  Typical use:
+
+      VALIDATE_SAMPLESHEET(file(params.samplesheet), [:])
+      // ... only if the workflow reaches here do you submit bcl2fastq
+      BCL2FASTQ(...)
+keywords:
+  - samplesheet
+  - illumina
+  - bcl2fastq
+  - bclconvert
+  - local-run-manager
+  - validation
+  - pre-flight
+  - demultiplexing
+  - subworkflow
+components:
+  - samplesheet_validate_bcl2fastq
+input:
+  - ch_samplesheet:
+      type: file
+      description: |
+        The Illumina samplesheet CSV. Format is auto-detected: bcl2fastq V1
+        (has a [Data] section), BCLConvert V2 (has a [BCLConvert_Data] or
+        [Cloud_Data] section), or Local Run Manager (no section markers).
+        Structure: [ path(samplesheet.csv) ]
+      pattern: "*.csv"
+  - ch_opts:
+      type: map
+      description: |
+        Options map. Recognised keys (all optional, all forward-compatible;
+        unknown keys are ignored):
+        - hammingDistanceAsError (Boolean, default false): when true, indices
+          whose pairwise Hamming distance is below 2 are reported as errors
+          (thrown, collected with the other issues) instead of warnings.
+output:
+  - versions:
+      type: file
+      description: |
+        File containing tool versions.
+        Structure: [ path(versions.yml) ]
+      pattern: "versions.yml"
+authors:
+  - "@inful"
+maintainers:
+  - "@inful"
