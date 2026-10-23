@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-23
+
+Patch release. Six fixes and two behaviour changes since 0.4.1, no
+new features and no API changes.
+
+The headline is a **bug in the published component**: the reshape
+module published the CSV into the *including* pipeline's
+`params.outdir`, so every consumer of `RESHAPE_SAMPLESHEET` got the
+CSV in their own results directory while the directory they asked for
+stayed empty. It shipped in 0.4.1.
+
+Two inputs that previously produced silently-wrong output now raise
+an error instead: a fastq path containing a comma, and a fastq file
+that matches two Sample_IDs. If you hit either, the error names the
+file — the CSV used to point at paths that were not on disk, or give
+two samples the same reads.
+
 ### Fixed
 - **The component published the CSV into the consumer's own results
   directory.** The reshape module had `publishDir "${params.outdir}"`,
