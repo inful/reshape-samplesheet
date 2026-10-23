@@ -201,7 +201,9 @@ The sub-workflow emits two views of the same data: a `csv` channel
 (the canonical artifact, good for inspection and external tools)
 and a `samples` channel (a pre-parsed channel of `[meta, fastq_1,
 fastq_2]` tuples — the "three lines to a real analysis module"
-hand-off). Pick whichever fits your consumer.
+hand-off). Pick whichever fits your consumer. `meta` carries `id` and
+`single_end`, plus `strandedness` when the CSV has a strandedness
+column (that is, when `opts.strandedness` was set).
 
 ```groovy
 include { RESHAPE_SAMPLESHEET } from './subworkflows/nf-core/reshape_samplesheet/main.nf'
@@ -276,7 +278,7 @@ The sub-workflow takes four arguments:
 | ---------------------- | ------ | ---------------------------------------------------------------------- |
 | `illumina_samplesheet` | path   | the Illumina CSV                                                       |
 | `fastq_dir`            | path   | directory containing the fastq files                                   |
-| `output_dir`           | path   | where to write the reshaped CSV                                        |
+| `output_dir`           | path   | where to write the reshaped CSV. Created if it does not exist. This is the directory the CSV lands in — nothing is published anywhere else, and in particular not into the including pipeline's own `params.outdir`. |
 | `opts`                 | Map    | options. Recognised keys: `recursive` (Boolean), `strandedness` (String). See below. |
 
 ### Options (`opts` Map)
@@ -351,6 +353,19 @@ separator (`.` or `_`) or the end of the string. So `sample_A` matches
 footgun where a short Sample_ID like `A` would otherwise false-match
 `ABC_S1_L001_R1_001.fastq.gz`.
 
+**One file, one sample**: a fastq file belongs to exactly one sample.
+The prefix rule means `A` also matches `A_1_S1_L001_R1_001.fastq.gz`,
+so the **longest** matching `Sample_ID` owns the file: `A_1` keeps it
+and `A` is reported as having no matching fastqs. Without that rule
+both samples silently claimed the same reads.
+
+**No commas in paths**: the output CSV puts several paths in one cell,
+joined with `,`, and the reader splits that cell on every comma. A
+path that contains a comma therefore cannot be read back — it would
+come back as two paths that do not exist. Reshape refuses such a path
+with an `IllegalArgumentException` naming it, rather than writing a
+CSV that points at files that are not there.
+
 **Custom regex** (`opts.pattern`): you can override the default with a
 regex template. The template may reference the Sample_ID as
 `${sampleId}` (any number of times), and the substitution is
@@ -416,6 +431,7 @@ message so you can find the offending file in a batch.
 | `fastq_dir` missing or not a directory | `IllegalArgumentException` with the path |
 | `fastq_dir` contains no `.fastq`/`.fq(.gz)` files | `IllegalArgumentException` with the path |
 | Sample in the samplesheet has no matching fastq files | `IllegalArgumentException` listing **all** such samples in one error so the user sees the complete list, not just the first |
+| A matched fastq path contains a comma | `IllegalArgumentException` naming the path — the output CSV joins paths with `,`, so such a path could not be read back |
 | Multi-line quoted CSV field | supported (the field's embedded newline is preserved) |
 | UTF-8 BOM at start of file | stripped |
 | CRLF / LF / CR line endings | all handled |

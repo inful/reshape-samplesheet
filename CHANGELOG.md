@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The component published the CSV into the consumer's own results
+  directory.** The reshape module had `publishDir "${params.outdir}"`,
+  which publishes to whatever `params.outdir` is in the *including*
+  pipeline. Every nf-core pipeline has its own `params.outdir`, so a
+  consumer that passed a different directory to `RESHAPE_SAMPLESHEET`
+  got the CSV in their main results directory and the directory they
+  asked for stayed **empty**. This shipped in 0.4.1 and was invisible
+  from this repo, where the CLI passes `params.outdir` as the output
+  directory so the two names coincide. The `publishDir` is gone; the
+  module writes to the directory it was given, resolving the staged
+  symlink to its target so a directory that does not exist yet is
+  created and filled. Verified end to end from a consumer pipeline
+  with its own `params.outdir`, both with and without a pre-existing
+  output directory, and locked in by a new nf-test case that sets
+  `params.outdir` and the output directory to different paths.
+- **A comma in a fastq path produced files that do not exist.** The
+  output CSV puts several paths in one cell, joined with `,`, and the
+  reader splits that cell on every comma. A path containing a comma —
+  e.g. `/data/run,2026/sample_A_S1_L001_R1_001.fastq.gz` — came back
+  as two paths, neither of which exists, and the `samples` emit handed
+  those to the consumer. Reshape now refuses such a path with an
+  `IllegalArgumentException` naming it, instead of writing a CSV that
+  points at files that are not there.
+- **One fastq file could be assigned to two samples.** The default
+  matcher only looks at the character right after the Sample_ID, so
+  `A` matched `A_1_S1_L001_R1_001.fastq.gz` as well as its own files.
+  Both samples then claimed that file: two samples, one set of reads, a
+  well-formed CSV and a clean exit — the same failure family as the
+  `_R1`/`_R2` bug fixed in 0.4.1, one axis over. The **longest**
+  matching Sample_ID now owns the file, so `A_1` keeps it and `A` is
+  reported as having no matching fastqs — the error that was already
+  there, now naming the sample that lost it.
+- **The UTF-8 test could not fail.** It asserted a round-trip, which
+  passes with the bug present on a UTF-8 host: there the buggy writer
+  (`out.text =`, platform charset) and the fixed one (`setText(…,
+  'UTF-8')`) produce the same bytes. It only failed under
+  `-Dfile.encoding=ISO-8859-1`, which nothing in `bin/test.sh` or
+  `ci.yml` set — a test that reads as coverage but cannot fail in the
+  environment the project runs in. It now runs the writer in a
+  subprocess whose default charset is ISO-8859-1 and asserts the bytes
+  on disk are UTF-8, which fails with the bug and passes with the fix,
+  on any host.
+- **`strandedness` was silently dropped on the way to consumers.** The
+  `samples` emit is built by re-parsing the emitted CSV, and the
+  parser read only `sample`, `fastq_1` and `fastq_2`. With
+  `--strandedness reverse` the CSV carried the value but the `meta`
+  map the consumer received did not — the information was in the
+  artifact and gone from the hand-off. The parser now carries the
+  column into `meta.strandedness`.
+- **CI never checked the version.** `nextflow.config`, `CITATION.cff`
+  and the newest released CHANGELOG heading could drift apart
+  unnoticed: `CITATION.cff` sat at `0.2.1` while the manifest said
+  `0.3.1` — two releases of drift, found by reading all three files
+  side by side. The lint job now asserts that all three agree.
+
+### Changed
+- `opts.pattern` is now compiled once per sample instead of once per
+  (sample, file) pair. Same matching, less regex compilation.
+- A fastq path containing a comma is rejected rather than written. A
+  Sample_ID containing a comma therefore needs `opts.pattern` (the
+  filename no longer has to start with the Sample_ID) — the writer
+  still RFC-4180-quotes such a Sample_ID.
+
+### Known limitations
+- The `samplesheet_validate` module still repeats the full
+  sample-to-fastq matching that the reshape module does a moment
+  later, so the reshape path pays for the matching twice. There is no
+  clean fix: dropping the module would leave the sub-workflow with one
+  component, and nf-core's real `subworkflows lint` wants two.
+
 ## [0.4.1] - 2026-10-22
 
 Patch release. Five fixes, one refactor, one docs commit since
