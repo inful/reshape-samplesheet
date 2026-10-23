@@ -90,16 +90,30 @@ class SamplesheetReshaper {
         // some samples don't get processed and the user only finds out
         // after the run.
         List<String> missingSamples = []
+        List<String> commaPaths = []
         List<Map> validSamples = []  // each: [sampleId: String, r1: String, r2: String]
+
+        // Which files belong to which sample. One file, one owner — see
+        // groupFastqsBySample for why that matters.
+        Map<String, List<File>> filesBySample = groupFastqsBySample(samples, fastqFiles, pattern)
 
         samples.each { Map<String, String> sample ->
             String sampleId = sample.Sample_ID ?: sample.sample_id
-            List<File> matches = fastqFiles.findAll { File f ->
-                matchesSampleId(f.name, sampleId, pattern)
-            }
+            List<File> matches = filesBySample[sampleId]
             if (matches.isEmpty()) {
                 missingSamples << sampleId
                 return
+            }
+            // A path containing a comma cannot be represented in the
+            // output CSV: multiple paths share one cell and are joined
+            // with a comma, and the reader splits that cell on every
+            // comma. Such a path comes back as two files that do not
+            // exist, so refuse the input instead of writing a CSV that
+            // lies about where the reads are.
+            matches.each { File f ->
+                if (f.absolutePath.contains(',')) {
+                    commaPaths << f.absolutePath
+                }
             }
             // The sample ID is passed to isReadFile so it can be
             // stripped before classifying; see that method for why.
@@ -108,6 +122,17 @@ class SamplesheetReshaper {
             String r2 = matches.findAll { isReadFile(it.name, sampleId, 2) }
                                   .collect { it.absolutePath }.join(',')
             validSamples << [sampleId: sampleId, r1: r1, r2: r2]
+        }
+
+        if (!commaPaths.isEmpty()) {
+            throw new IllegalArgumentException(
+                "Cannot reshape samplesheet ${samplesheet.absolutePath}: " +
+                "${commaPaths.size()} fastq path(s) contain a comma. The output CSV " +
+                "joins several paths into one cell with ',', so a path containing a " +
+                "comma cannot be read back unambiguously. Rename the file(s) or move " +
+                "them into a directory whose name has no comma:\n  " +
+                commaPaths.join('\n  ')
+            )
         }
 
         if (!missingSamples.isEmpty()) {
@@ -230,6 +255,70 @@ class SamplesheetReshaper {
     }
 
     /**
+     * Group the fastq files by the sample that owns them.
+     *
+     * <p>In the default matcher a single file can match two Sample_IDs:
+     * "A" matches both "A_S1_..." and "A_1_S1_...", because the
+     * separator check only looks at the character right after the
+     * Sample_ID. The file then went to <em>both</em> samples, so two
+     * samples silently shared one set of reads — a well-formed CSV, a
+     * clean exit, wrong science. The longest matching Sample_ID wins:
+     * "A_1" owns "A_1_S1_..." and "A" is left with nothing, which the
+     * "no matching fastq files" error then names.</p>
+     *
+     * <p>With a custom {@code pattern} each sample keeps collecting the
+     * files its own pattern matches — the pattern is the user's
+     * explicit mapping. It is compiled once per sample instead of once
+     * per (sample, file) pair.</p>
+     */
+    private static Map<String, List<File>> groupFastqsBySample(
+        List<Map<String, String>> samples,
+        List<File> fastqFiles,
+        String pattern
+    ) {
+        Map<String, List<File>> bySample = [:].withDefault { [] }
+        List<String> sampleIds = samples.collect { it.Sample_ID ?: it.sample_id }
+        if (pattern != null) {
+            sampleIds.each { String sampleId ->
+                java.util.regex.Pattern p = compilePattern(pattern, sampleId)
+                bySample[sampleId] = fastqFiles.findAll { p.matcher(it.name).matches() }
+            }
+            return bySample
+        }
+        fastqFiles.each { File f ->
+            String owner = null
+            sampleIds.each { String sampleId ->
+                if (matchesSampleId(f.name, sampleId) &&
+                    (owner == null || sampleId.length() > owner.length())) {
+                    owner = sampleId
+                }
+            }
+            if (owner != null) {
+                bySample[owner] << f
+            }
+        }
+        return bySample
+    }
+
+    /**
+     * Interpolate the Sample_ID into the user's pattern template and
+     * compile the result.
+     *
+     * <p>Pattern.quote adds \Q and \E which are recognised by the
+     * Java regex engine, so a Sample_ID like "v1.0" matches literally.
+     * quoteReplacement handles $ and \ in the replacement string itself
+     * (since we use replaceAll).</p>
+     */
+    private static java.util.regex.Pattern compilePattern(String pattern, String sampleId) {
+        String escaped = java.util.regex.Pattern.quote(sampleId)
+        String interpolated = pattern.replaceAll(
+            '\\$\\{sampleId\\}',
+            java.util.regex.Matcher.quoteReplacement(escaped)
+        )
+        return java.util.regex.Pattern.compile(interpolated)
+    }
+
+    /**
      * Decide whether a fastq filename belongs to a given Sample_ID.
      *
      * Default behaviour (no {@code pattern} option): the filename must
@@ -238,26 +327,8 @@ class SamplesheetReshaper {
      * string. This catches the documented footgun where a sample named
      * "A" would otherwise match "ABC_S1_L001_R1_001.fastq.gz" via
      * substring matching.
-     *
-     * When a {@code pattern} is supplied, the filename is tested
-     * against the regex after substituting {@code \$\{sampleId\}}
-     * with the (regex-escaped) Sample_ID. The pattern may reference
-     * {@code \$\{sampleId\}} more than once.
      */
-    private static boolean matchesSampleId(String filename, String sampleId, String pattern) {
-        if (pattern != null) {
-            // Interpolate the (regex-escaped) sampleId into the pattern.
-            // Pattern.quote adds \Q and \E which are recognised by the
-            // Java regex engine, so a Sample_ID like "v1.0" matches
-            // literally. quoteReplacement handles $ and \ in the
-            // replacement string itself (since we use replaceAll).
-            String escaped = java.util.regex.Pattern.quote(sampleId)
-            String interpolated = pattern.replaceAll(
-                '\\$\\{sampleId\\}',
-                java.util.regex.Matcher.quoteReplacement(escaped)
-            )
-            return filename ==~ interpolated
-        }
+    private static boolean matchesSampleId(String filename, String sampleId) {
         if (!filename.startsWith(sampleId)) {
             return false
         }

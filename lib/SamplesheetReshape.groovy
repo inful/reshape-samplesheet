@@ -16,6 +16,18 @@
  * in a fastq directory. Multiple R1/R2 files for one sample (e.g. across
  * lanes) are joined with a comma into a single cell, per nf-core convention.
  *
+ * <p>Two rules keep the output unambiguous:
+ * <ul>
+ *   <li><b>One file, one sample.</b> When more than one Sample_ID matches
+ *       a file — {@code A} matches {@code A_1_S1_…} as well — the
+ *       <em>longest</em> matching Sample_ID owns it. Otherwise two samples
+ *       silently share one set of reads.</li>
+ *   <li><b>No commas in paths.</b> The output CSV joins several paths into
+ *       one cell with a comma, so a path containing a comma could not be
+ *       read back (it would split into two paths that do not exist).
+ *       Such a path is rejected with an error naming it.</li>
+ * </ul>
+ *
  * Pure Groovy, no external runtime dependencies — Nextflow already provides
  * Groovy, so this is safe to call from a sub-workflow.
  *
@@ -316,7 +328,9 @@ class SamplesheetReshape {
      *   <li>{@code meta} — {@code [id: 'sample_id', single_end: true|false]}.
      *       {@code single_end} is {@code true} when the sample's
      *       {@code fastq_2} cell is empty (the standard nf-core
-     *       convention for single-end samples).</li>
+     *       convention for single-end samples). A {@code strandedness}
+     *       key is added when the CSV has a non-empty strandedness
+     *       column.</li>
      *   <li>{@code fastq_1} — {@code [File, ...]} of R1 paths. May be
      *       empty if the CSV has no {@code fastq_1} column (shouldn't
      *       happen for our emit, but the parser is defensive).</li>

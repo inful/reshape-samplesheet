@@ -471,6 +471,20 @@ runner.test('writeReshaped writes UTF-8 regardless of the platform charset', {
     // not defaulting to UTF-8 (older Docker images, LANG=C containers)
     // a non-ASCII sample name was silently destroyed on write.
     //
+    // A round-trip assertion cannot catch that on a UTF-8 host: there
+    // the buggy writer and the fixed one produce the SAME bytes, so
+    // the test passed with the bug present (verified — it only failed
+    // under -Dfile.encoding=ISO-8859-1, which nothing in bin/test.sh
+    // or ci.yml set). The check therefore runs the writer in a
+    // subprocess whose default charset is ISO-8859-1 and asserts the
+    // bytes on disk are UTF-8. That fails with the bug and passes with
+    // the fix, on any host.
+    //
+    // JAVA_TOOL_OPTIONS is how the flag reaches the JVM: the `groovy`
+    // launcher sets -D properties too late for Charset.defaultCharset()
+    // (which is read at JVM startup), so `groovy -Dfile.encoding=…`
+    // changes the property but not the charset.
+    //
     // Built from a codepoint so this test source stays pure ASCII and
     // cannot itself be mangled by a non-UTF-8 compiler.
     def id = "s" + (char) 0x00E4 + "mple_X"
@@ -479,14 +493,37 @@ runner.test('writeReshaped writes UTF-8 regardless of the platform charset', {
     def sheet = File.createTempFile('utf8_sheet', '.csv')
     sheet.setText("[Data]\nSample_ID,index,index2\n${id},ATCG,GCTA\n", 'UTF-8')
     def outDir = Files.createTempDirectory('utf8_out_').toFile()
+    // Pure ASCII on purpose: the child JVM reads this script with its
+    // (non-UTF-8) default charset.
+    def probe = File.createTempFile('utf8_probe', '.groovy')
+    probe.setText(
+        'def out = SamplesheetReshape.writeReshaped(new File(args[0]), new File(args[1]), new File(args[2]))\n' +
+        'print out.absolutePath\n', 'UTF-8')
     try {
-        def csvFile = SamplesheetReshape.writeReshaped(outDir, sheet, root)
-        def row2 = csvFile.readLines()[1]
-        assert row2.startsWith(id),
-            "round-tripped row lost the non-ASCII sample name: '${row2}'"
+        def pb = new ProcessBuilder([
+            'groovy', '-cp', new File('lib').absolutePath, probe.absolutePath,
+            outDir.absolutePath, sheet.absolutePath, root.absolutePath
+        ])
+        pb.environment().put('JAVA_TOOL_OPTIONS', '-Dfile.encoding=ISO-8859-1')
+        def proc = pb.start()
+        def stdout = new String(proc.inputStream.bytes, 'UTF-8')
+        def stderr = new String(proc.errorStream.bytes, 'UTF-8')
+        proc.waitFor()
+        assert proc.exitValue() == 0, "probe failed: ${stderr}"
+        def csvFile = new File(stdout.trim())
+        assert csvFile.exists(), "probe wrote no CSV (stdout: '${stdout}', stderr: '${stderr}')"
+        // Decoded as UTF-8 the file must contain the non-ASCII name
+        // intact. A writer that used the platform charset wrote the
+        // byte 0xE4 (ISO-8859-1) and this decode yields a replacement
+        // character instead.
+        def content = new String(csvFile.bytes, 'UTF-8')
+        assert content.contains(id),
+            "CSV is not UTF-8 — the non-ASCII sample name did not survive the write"
+        // And the same file must still round-trip through the reader.
         assert SamplesheetReshape.parseReshapedCsv(csvFile)[0].meta.id == id,
             "parseReshapedCsv must recover the exact Sample_ID"
     } finally {
+        probe.delete()
         sheet.delete()
         root.deleteDir()
         outDir.deleteDir()
@@ -514,29 +551,17 @@ runner.test('writer quotes a Sample_ID that contains the separator (round-trip-s
     // writer now RFC-4180-quotes any cell containing `,`, so the row
     // reads back as 3 cells with the full id intact.
     //
-    // We exercise this end-to-end by running reshape on a properly
-    // quoted Sample_ID (the input parser already accepts quoted
-    // sample ids via CsvCell.parseLine; see test_parser.groovy's
-    // "Quoted fields with commas …" test for the input side) and
-    // then verifying both the on-the-wire CSV is quoted AND that
-    // parseReshapedCsv reads it back with the full id preserved.
-    //
-    // Note on the fastq cells: the parser splits multi-value cells
-    // on the unescaped separator, so a single fastq path that itself
-    // contains a comma (because the Sample_ID prefix did) will be
-    // split into multiple "files". That's a separate parser design
-    // — out of scope for this regression, which is specifically
-    // about the Sample_ID cell surviving the round-trip. The test
-    // below asserts only the things that were silently broken
-    // before: the on-wire quoting and the meta id preservation.
+    // The fastq filenames must NOT contain the comma: the output CSV
+    // joins several paths into one cell with `,` and the reader splits
+    // that cell on every comma, so a path with a comma in it cannot be
+    // read back (reshape refuses those, see "reshape refuses a fastq
+    // path that contains a comma" below). The sample id therefore
+    // cannot be part of the filename either, so the files are reached
+    // through a custom pattern instead of the default prefix match.
     def root = Files.createTempDirectory('reshape_comma_sampleid_').toFile()
     def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
-    // Comma is a legitimate filename character on macOS/Linux/Windows;
-    // the matching regex's `startsWith(sampleId)` + separator check
-    // (`_` after the id) accepts these just like an underscore-
-    // delimited name would.
-    new File(root, 'study_X,patient_Y_S1_L001_R1_001.fastq.gz').bytes = bytes
-    new File(root, 'study_X,patient_Y_S1_L001_R2_001.fastq.gz').bytes = bytes
+    new File(root, 'L001_R1_001.fastq.gz').bytes = bytes
+    new File(root, 'L001_R2_001.fastq.gz').bytes = bytes
     try {
         def tmp = File.createTempFile('comma_sample', '.csv')
         tmp.text = '''[Data]
@@ -546,10 +571,13 @@ Sample_ID,index,index2
         def csvFile
         try {
             // Drive the writer through the public writeReshaped path
-            // so we test the same code as a real pipeline run.
+            // so we test the same code as a real pipeline run. The
+            // pattern matches every file: there is exactly one sample
+            // in this fixture, so "the file that matches" is
+            // unambiguous.
             def outDir = Files.createTempDirectory('comma_out_').toFile()
             csvFile = SamplesheetReshape.writeReshaped(
-                outDir, tmp, root
+                outDir, tmp, root, [pattern: '.*']
             )
             String csv = csvFile.text
             def row = csv.readLines().drop(1).find { it.contains('study_X') }
@@ -570,6 +598,110 @@ Sample_ID,index,index2
             tmp.delete()
             csvFile?.parentFile?.deleteDir()
         }
+    } finally { root.deleteDir() }
+})
+
+// -----------------------------------------------------------------------------
+// fastq paths and the comma separator
+//
+// The output CSV puts several paths in one cell, joined with `,`, and
+// the reader splits that cell on every comma. A path that contains a
+// comma therefore comes back as two paths that do not exist -- and the
+// `samples` emit would hand those to a downstream module.
+// -----------------------------------------------------------------------------
+println "\n[comma in a fastq path]"
+
+runner.test('reshape refuses a fastq path that contains a comma', {
+    // The comma lives in a directory name, so the Sample_ID and the
+    // filenames stay clean and the ONLY thing wrong is the path.
+    def root = Files.createTempDirectory('reshape_comma_path_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    def commaDir = new File(root, 'run,2026')
+    commaDir.mkdirs()
+    new File(commaDir, 'sample_A_S1_L001_R1_001.fastq.gz').bytes = bytes
+    new File(commaDir, 'sample_A_S1_L001_R2_001.fastq.gz').bytes = bytes
+    def sheet = File.createTempFile('comma_path', '.csv')
+    sheet.setText("[Data]\nSample_ID,index,index2\nsample_A,ATCG,GCTA\n", 'UTF-8')
+    try {
+        def msg = null
+        try {
+            SamplesheetReshape.reshape(sheet, commaDir)
+        } catch (IllegalArgumentException e) {
+            msg = e.message
+        }
+        assert msg != null,
+            "expected an exception: a comma path cannot be written to the CSV"
+        assert msg.contains('comma'),
+            "error should explain the comma problem: ${msg}"
+        assert msg.contains('run,2026'),
+            "error should name the offending path: ${msg}"
+    } finally {
+        sheet.delete()
+        root.deleteDir()
+    }
+})
+
+// -----------------------------------------------------------------------------
+// one file, one sample
+//
+// The default matcher only looks at the character right after the
+// Sample_ID, so "A" matches "A_1_S1_L001_R1_001.fastq.gz" as well as
+// "A_S1_...". Both samples then claimed the same file: two samples,
+// one set of reads, a well-formed CSV and a clean exit.
+// -----------------------------------------------------------------------------
+println "\n[one fastq file, one sample]"
+
+runner.test('a file that matches two Sample_IDs goes to the longest one, and the other is reported', {
+    def root = Files.createTempDirectory('reshape_two_samples_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    new File(root, 'A_1_S1_L001_R1_001.fastq.gz').bytes = bytes
+    new File(root, 'A_1_S1_L001_R2_001.fastq.gz').bytes = bytes
+    try {
+        def tmp = File.createTempFile('two_samples', '.csv')
+        tmp.text = '''[Data]
+Sample_ID,index,index2
+A,ATCG,GCTA
+A_1,GGCC,TGAA
+'''
+        try {
+            def msg = null
+            try {
+                SamplesheetReshape.reshape(tmp, root)
+            } catch (IllegalArgumentException e) {
+                msg = e.message
+            }
+            assert msg != null, "expected an exception: 'A' has no fastq of its own"
+            assert msg.trim().endsWith('A'),
+                "only 'A' should be reported as having no matching fastqs: ${msg}"
+        } finally { tmp.delete() }
+    } finally { root.deleteDir() }
+})
+
+runner.test('a sample and a longer sample id with the same prefix each keep their own files', {
+    def root = Files.createTempDirectory('reshape_prefix_').toFile()
+    def bytes = [0x1f, 0x8b, 0x08, 0x00] as byte[]
+    new File(root, 'A_S1_L001_R1_001.fastq.gz').bytes = bytes
+    new File(root, 'A_S1_L001_R2_001.fastq.gz').bytes = bytes
+    new File(root, 'A_1_S1_L001_R1_001.fastq.gz').bytes = bytes
+    new File(root, 'A_1_S1_L001_R2_001.fastq.gz').bytes = bytes
+    try {
+        def tmp = File.createTempFile('prefix_samples', '.csv')
+        tmp.text = '''[Data]
+Sample_ID,index,index2
+A,ATCG,GCTA
+A_1,GGCC,TGAA
+'''
+        try {
+            def rows = SamplesheetReshape.reshape(tmp, root).readLines().drop(1)
+            def rowA = rows.find { it.startsWith('A,') }
+            def rowA1 = rows.find { it.startsWith('A_1,') }
+            assert rowA != null, "row for A missing: ${rows}"
+            assert rowA1 != null, "row for A_1 missing: ${rows}"
+            assert rowA.contains('A_S1_L001_R1_001') && !rowA.contains('A_1_S1'),
+                "A must only get its own files, got: ${rowA}"
+            assert rowA1.contains('A_1_S1_L001_R1_001') && !rowA1.contains('/A_S1'),
+                "A_1 must only get its own files, got: ${rowA1}"
+        } finally { tmp.delete() }
     } finally { root.deleteDir() }
 })
 

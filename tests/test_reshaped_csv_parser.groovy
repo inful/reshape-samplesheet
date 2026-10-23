@@ -299,4 +299,35 @@ runner.test('round-trips a CSV whose Sample_ID contains an embedded double-quote
     }
 })
 
+// -----------------------------------------------------------------------------
+// The strandedness column
+//
+// The `samples` emit is built by re-parsing the CSV, so a column the
+// parser ignores is a column the consumer never sees. The writer
+// emits a strandedness column when the caller asked for one, and the
+// parser must carry it into meta.
+// -----------------------------------------------------------------------------
+println "\n[ReshapedCsvParser — strandedness column]"
+
+runner.test('carries the strandedness column into meta', {
+    def records = parseString("""sample,fastq_1,fastq_2,strandedness
+sample_A,/A_R1.fq,/A_R2.fq,reverse
+sample_B,/B_R1.fq,/B_R2.fq,forward
+""")
+    assert records.size() == 2
+    assert records[0].meta.strandedness == 'reverse',
+        "expected meta.strandedness == 'reverse', got: '${records[0].meta.strandedness}'"
+    assert records[1].meta.strandedness == 'forward'
+})
+
+runner.test('leaves meta.strandedness unset when the CSV has no strandedness column', {
+    def records = parseString("""sample,fastq_1,fastq_2
+sample_A,/A_R1.fq,/A_R2.fq
+""")
+    assert records.size() == 1
+    assert !records[0].meta.containsKey('strandedness'),
+        "a CSV without the column must not invent one: ${records[0].meta}"
+    assert records[0].meta.strandedness == null
+})
+
 System.exit(runner.summary())

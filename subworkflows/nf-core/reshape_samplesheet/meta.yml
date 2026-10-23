@@ -70,6 +70,8 @@ output:
         through the lib's canonical ReshapedCsvParser. Each tuple is
         [ meta, fastq_1, fastq_2 ] where:
         - meta: [id: 'sample_id', single_end: true|false]
+          plus strandedness: 'reverse' when the CSV has a strandedness
+          column (i.e. when opts.strandedness was set)
         - fastq_1: [File, ...]  (R1 fastq paths, possibly multiple lanes)
         - fastq_2: [File, ...]  (R2 fastq paths; empty for single-end)
 

@@ -42,7 +42,9 @@
  * <h2>Output shape</h2>
  * Each record is a Map with three keys:
  * <ul>
- *   <li>{@code meta}    — {@code [id: String, single_end: boolean]}</li>
+ *   <li>{@code meta}    — {@code [id: String, single_end: boolean]},
+ *       plus {@code strandedness: String} when the CSV has a
+ *       non-empty {@code strandedness} column</li>
  *   <li>{@code fastq_1} — {@code [File, ...]} (possibly empty)</li>
  *   <li>{@code fastq_2} — {@code [File, ...]} (empty for single-end)</li>
  * </ul>
@@ -106,6 +108,9 @@ class ReshapedCsvParser {
         }
         int fq1Idx = header.indexOf('fastq_1')
         int fq2Idx = header.indexOf('fastq_2')
+        // The strandedness column is optional: the writer only emits it
+        // when the caller asked for one.
+        int strandedIdx = header.indexOf('strandedness')
         // fastq_1 and fastq_2 are technically optional in a generic
         // CSV, but our writer always emits them. A defensive parse
         // returns empty lists for missing columns.
@@ -125,6 +130,18 @@ class ReshapedCsvParser {
                 id         : sampleId,
                 single_end : !(fq2Idx >= 0 && fq2Idx < row.size() && row[fq2Idx].trim())
             ]
+            // Carry the strandedness column into meta. The `samples`
+            // emit is built by re-parsing this CSV, so a column the
+            // parser ignores is a column the consumer never sees —
+            // the info was in the CSV but silently dropped on the way
+            // out. Absent or empty means "no strandedness", so the key
+            // is left out entirely rather than set to null.
+            if (strandedIdx >= 0 && strandedIdx < row.size()) {
+                String stranded = row[strandedIdx].trim()
+                if (stranded) {
+                    meta.strandedness = stranded
+                }
+            }
             // Split the cell on `,` to recover the per-lane file
             // list. The writer joins paths with `,` inside quoted
             // cells; after RFC-4180 parsing the cell is a single
