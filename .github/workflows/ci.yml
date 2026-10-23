@@ -81,9 +81,27 @@ jobs:
           # nextflowVersion must reference 22.10+ (the DSL2 minimum we support)
           echo "$MIN_NF" | grep -q '22\.10' \
             || { echo "::error::manifest.nextflowVersion should reference 22.10+, got: $MIN_NF"; exit 1; }
+          # The three places that carry the version must agree: the
+          # manifest, the newest released CHANGELOG heading and
+          # CITATION.cff. Nothing checked this before, so CITATION.cff
+          # sat at 0.2.1 while the manifest said 0.3.1 — two releases
+          # of drift that nobody noticed until an audit read all three
+          # files side by side.
+          #
+          # The CHANGELOG's [Unreleased] section is skipped: it holds
+          # the work for the NEXT release, so the newest *released*
+          # heading is the one that must match the shipped version.
+          CHANGELOG_VERSION=$(awk -F'[][]' '/^## \[/ && $2 != "Unreleased" {print $2; exit}' CHANGELOG.md)
+          CITATION_VERSION=$(awk -F': ' '/^version:/ {print $2; exit}' CITATION.cff)
+          test "$VERSION" = "$CHANGELOG_VERSION" \
+            || { echo "::error::nextflow.config version ($VERSION) does not match the newest released CHANGELOG entry ($CHANGELOG_VERSION)"; exit 1; }
+          test "$VERSION" = "$CITATION_VERSION" \
+            || { echo "::error::nextflow.config version ($VERSION) does not match CITATION.cff ($CITATION_VERSION)"; exit 1; }
           echo "::group::Manifest values"
           echo "  name              = $NAME"
           echo "  version           = $VERSION"
+          echo "  changelog version = $CHANGELOG_VERSION"
+          echo "  citation version  = $CITATION_VERSION"
           echo "  author            = $AUTHOR"
           echo "  nextflowVersion   = $MIN_NF"
           echo "  mainScript        = $MAIN"
