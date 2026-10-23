@@ -22,22 +22,6 @@ process SAMPLESHEET_RESHAPE {
     conda { params.enable_conda ? "groovy=4.0.21" : null }
     container { params.enable_docker ? "groovy:4.0-jdk21" : null }
 
-    // Publish the captured CSV to the directory the user actually asked
-    // for. This is what makes a not-yet-existing --outdir work: the
-    // `output_dir` input is staged as a *symlink*, which is broken when
-    // the target does not exist, so the script's mkdir ends up creating
-    // a workdir-local directory and the CSV never reaches the intended
-    // path. params.outdir is the un-staged value the caller passed, so
-    // publishing to it uses (and creates) the real directory.
-    //
-    // Disabled when unset, so a consumer including this module without
-    // a params.outdir is unaffected; they get the CSV via the `csv` emit.
-    //
-    // Scoped to the CSV with a pattern: without it, versions.yml is
-    // published into the user's results directory too, which nothing
-    // asked for and which was not there before publishDir was added.
-    publishDir "${params.outdir}", mode: 'copy', overwrite: true, enabled: params.outdir != null, pattern: "*.nfcore.csv"
-
     input:
     path samplesheet
     path fastq_dir
@@ -85,29 +69,41 @@ process SAMPLESHEET_RESHAPE {
         exit 1
     fi
 
-    # Make sure output_dir is a writable directory. Three cases:
-    #   1. output_dir doesn't exist yet — mkdir -p creates it.
-    #   2. output_dir is a regular file, a symlink (incl. broken
-    #      symlinks to a non-existent target, which is what Nextflow
-    #      creates with checkIfExists: false), or any other non-dir
-    #      — we need to clear it so mkdir can create a real directory.
+    # Resolve the REAL output directory.
+    #
+    # Nextflow stages `output_dir` as a symlink pointing at the path the
+    # caller asked for. Three cases:
+    #   1. output_dir is that symlink — create and write to its TARGET,
+    #      not the symlink. When the target does not exist yet the
+    #      symlink is broken, so writing through it lands in the
+    #      workdir instead: the directory the caller chose stayed empty
+    #      and the CSV was stranded in work/<hash>/.
+    #   2. output_dir is a regular file or any other non-dir — clear it
+    #      so mkdir can create a real directory.
     #   3. output_dir is already a directory — leave its contents
-    #      alone. Anything the user has put there (logs, reports,
-    #      a different CSV from a parallel run) stays untouched.
+    #      alone. Anything the user has put there (logs, reports, a
+    #      different CSV from a parallel run) stays untouched.
     #
-    # `-d` follows symlinks, so a symlink to a directory is treated
-    # as a directory (case 3, correct). A symlink to a non-existent
-    # path is treated as not-a-directory (case 2, correct — we'd
-    # otherwise fail at mkdir).
+    # A publishDir used to cover case 1, but it published to
+    # params.outdir — a global of the *including* pipeline. In a
+    # consumer pipeline that is the consumer's own results directory,
+    # not the directory they passed to this sub-workflow: the CSV went
+    # to their results dir and the directory they asked for stayed
+    # empty. Writing to the staged path's target is correct for the CLI
+    # and for a consumer.
     #
-    # The `rm -f` on output_dir is intentional but not `rm -rf`:
-    # a destructive wipe of the whole output_dir would surprise users
-    # who have other files alongside the CSV. We only clear whatever
-    # pre-existing path is in the way of the directory, then leave
-    # case 3 (real existing directory) alone.
-    if [ ! -d ${out_dir_q} ]; then
+    # The `rm -f` in case 2 is intentional but not `rm -rf`: a
+    # destructive wipe of the whole output_dir would surprise users
+    # who have other files alongside the CSV.
+    if [ -L ${out_dir_q} ]; then
+        out_dir_target=\$(readlink ${out_dir_q})
+        mkdir -p "\$out_dir_target"
+    elif [ ! -d ${out_dir_q} ]; then
         rm -f ${out_dir_q}
         mkdir -p ${out_dir_q}
+        out_dir_target=${out_dir_q}
+    else
+        out_dir_target=${out_dir_q}
     fi
     # Do NOT delete the previous CSV here. writeReshaped() throws on a
     # malformed samplesheet, and an earlier version of this script
@@ -170,7 +166,8 @@ process SAMPLESHEET_RESHAPE {
         stageDir.deleteDir()
     }
     GROOVY
-    groovy -cp lib reshape.groovy ${out_dir_q} ${samplesheet_q} ${fastq_dir_q} ${opts_json_q}
+    # Quoted: the output directory may contain spaces.
+    groovy -cp lib reshape.groovy "\${out_dir_target}" ${samplesheet_q} ${fastq_dir_q} ${opts_json_q}
 
     # The CSV itself is already in the workdir — the Groovy step wrote it
     # there via stage_reshape and the cleanup above removed only the

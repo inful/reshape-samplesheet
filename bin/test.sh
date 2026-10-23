@@ -212,6 +212,17 @@ run_output_path_smoke() {
         fail=1
     fi
 
+    # A space in --outdir is a legal path and must work. The module
+    # resolves the output directory through a shell variable, so an
+    # unquoted one would split the path into two arguments.
+    mkdir -p "$root/with space"
+    nextflow -q run main.nf --samplesheet "$sheet" --fastq_dir tests/fastqs \
+        --outdir "$root/with space" --recursive false >/dev/null 2>&1
+    if [[ ! -f "$root/with space/illumina_bcl2fastq.nfcore.csv" ]]; then
+        echo "FAIL: space in --outdir broke the run" >&2
+        fail=1
+    fi
+
     # A failed run must NOT destroy the previous good CSV.
     #
     # Compares against a copy of the bytes rather than a checksum: the

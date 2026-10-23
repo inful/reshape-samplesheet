@@ -391,4 +391,52 @@ nextflow_workflow {
             new File("\${projectDir}/../../../../tests/.nfcore_test_output").deleteDir()
         }
     }
+
+
+    test("the CSV lands in the requested output_dir, not in the pipeline's params.outdir") {
+
+        // Regression lock for the bug where the reshape module carried
+        // `publishDir "${params.outdir}"`. params.outdir is a global of
+        // the *including* pipeline, so the CSV was published into the
+        // consumer's own results directory while the directory the
+        // consumer actually asked for stayed empty. Every nf-core
+        // pipeline has a params.outdir, so this hit every consumer.
+        //
+        // The repo's own main.nf passes params.outdir as the output
+        // directory, so the two names coincided and the bug was
+        // invisible from here. This test sets them to different
+        // directories on purpose.
+
+        when {
+            params {
+                outdir = "${projectDir}/tests/.nfcore_test_output_consumer_outdir"
+            }
+            workflow {
+                """
+                input[0] = file('\${projectDir}/../../../../tests/data/illumina_bcl2fastq.csv')
+                input[1] = file('\${projectDir}/../../../../tests/fastqs')
+                input[2] = file('\${projectDir}/../../../../tests/.nfcore_test_output_requested')
+                input[3] = [:]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success,
+                "reshape failed — see the .command.err / nextflow log for details"
+
+            def requested = new File("${projectDir}/tests/.nfcore_test_output_requested")
+            assert new File(requested, 'illumina_bcl2fastq.nfcore.csv').exists(),
+                "the CSV must be written to the output_dir that was passed in — got: ${requested}"
+
+            def consumerOutdir = new File("${projectDir}/tests/.nfcore_test_output_consumer_outdir")
+            assert !new File(consumerOutdir, 'illumina_bcl2fastq.nfcore.csv').exists(),
+                "the CSV must NOT be published into the including pipeline's params.outdir — got: ${consumerOutdir}"
+        }
+
+        cleanup {
+            new File("${projectDir}/tests/.nfcore_test_output_requested").deleteDir()
+            new File("${projectDir}/tests/.nfcore_test_output_consumer_outdir").deleteDir()
+        }
+    }
 }
